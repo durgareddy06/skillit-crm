@@ -2,8 +2,7 @@ import Ticket from "../models/Ticket.js";
 import Student from "../models/Student.js";
 import User from "../models/User.js";
 import { nextTicketId } from "../models/Counter.js";
-import axios from "axios";
-import { triggerEmailOutboxWebhook, triggerTokenResolvedWebhook } from "../services/webhookService.js";
+import * as emailService from "../services/emailService.js";
 
 // Helper to determine allowed department based on user role and designation
 function getAllowedDepartment(user) {
@@ -25,16 +24,6 @@ function getAllowedDepartment(user) {
   return "Support"; // default fallback
 }
 
-// Trigger n8n webhook asynchronously
-async function triggerN8NWebhook(url, data) {
-  if (!url) return;
-  try {
-    await axios.post(url, data);
-    console.log(`Triggered n8n webhook: ${url}`);
-  } catch (error) {
-    console.error(`Failed to trigger n8n webhook: ${url}`, error.message);
-  }
-}
 
 // 1. List Tickets (filtered by role and status)
 export async function listTickets(req, res) {
@@ -84,7 +73,7 @@ export async function getTicket(req, res) {
   }
 }
 
-// 3. Create Ticket (System/n8n)
+// 3. Create Ticket
 export async function createTicket(req, res) {
   try {
     const { senderEmail, recipientEmail, subject, body, attachments, priority } = req.body;
@@ -144,6 +133,11 @@ export async function createTicket(req, res) {
       io.emit("ticket-created", newTicket);
     }
 
+    // Send ticket confirmation email natively
+    emailService.sendTicketCreatedEmail(newTicket).catch((err) => {
+      console.error("[Ticket Controller] Failed to send ticket creation email:", err.message);
+    });
+
     res.status(201).json(newTicket);
   } catch (error) {
     console.error("Error in createTicket:", error);
@@ -178,10 +172,6 @@ export async function assignTicket(req, res) {
       io.emit("ticket-assigned", { ticketId: ticket.ticketId, ticket, fromDepartment: oldDept, toDepartment: department });
     }
 
-    // Trigger n8n webhook for Ticket Assignment
-    const n8nUrl = process.env.N8N_TICKET_ASSIGN_WEBHOOK_URL;
-    triggerN8NWebhook(n8nUrl, { ticketId: ticket.ticketId, assignedDepartment: department, oldDepartment: oldDept });
-
     res.json(ticket);
   } catch (error) {
     console.error("Error in assignTicket:", error);
@@ -212,13 +202,9 @@ export async function resolveTicket(req, res) {
       io.emit("ticket-resolved", { ticketId: ticket.ticketId, ticket });
     }
 
-    // Trigger n8n webhook for Ticket Resolution
-    const n8nUrl = process.env.N8N_TICKET_RESOLVE_WEBHOOK_URL;
-    triggerN8NWebhook(n8nUrl, { ticketId: ticket.ticketId, resolvedBy: ticket.resolvedByName, resolvedAt: ticket.resolvedAt, studentEmail: ticket.studentEmail });
-
-    // Trigger TokenResolvedWebhook to n8n asynchronously
-    triggerTokenResolvedWebhook(ticket).catch((err) => {
-      console.error("[Ticket Controller] Failed to trigger TokenResolvedWebhook:", err.message);
+    // Send resolution email natively to student
+    emailService.sendTicketResolvedEmail(ticket).catch((err) => {
+      console.error("[Ticket Controller] Failed to send ticket resolution email:", err.message);
     });
 
     res.json(ticket);
@@ -262,24 +248,9 @@ export async function replyTicket(req, res) {
       io.emit("ticket-updated", ticket);
     }
 
-    // Trigger n8n webhook to send the email out to the student
-    const n8nUrl = process.env.N8N_EMAIL_SEND_WEBHOOK_URL;
-    triggerN8NWebhook(n8nUrl, {
-      ticketId: ticket.ticketId,
-      studentEmail: ticket.studentEmail,
-      studentName: ticket.studentName,
-      subject: `Re: ${ticket.subject} [${ticket.ticketId}]`,
-      message,
-      attachments: attachments || []
-    });
-
-    // Trigger EmailOutboxWebhook back to student email
-    triggerEmailOutboxWebhook(ticket, {
-      subject: `Re: ${ticket.subject} [${ticket.ticketId}]`,
-      message,
-      attachments: attachments || []
-    }).catch((err) => {
-      console.error("[Ticket Controller] Failed to trigger EmailOutboxWebhook:", err.message);
+    // Send reply email natively to student
+    emailService.sendSupportReplyEmail(ticket, message).catch((err) => {
+      console.error("[Ticket Controller] Failed to send support reply email:", err.message);
     });
 
     res.json(ticket);
@@ -320,143 +291,4 @@ export async function getRMTickets(req, res) {
   }
 }
 
-// Webhook Handlers (matching n8n public webhooks)
 
-// Webhook 1, 2, 3: Incoming Support/Tech/RM emails
-export async function webhookIncomingEmail(req, res) {
-  // Map parameters to createTicket
-  const { senderEmail, recipientEmail, subject, body, attachments } = req.body;
-  req.body.priority = req.body.priority || "Medium";
-  return createTicket(req, res);
-}
-
-// Webhook 4: Outgoing reply
-export async function webhookOutgoingEmail(req, res) {
-  const { ticketId, message, attachments } = req.body;
-  
-  if (!ticketId || !message) {
-    return res.status(400).json({ message: "ticketId and message are required" });
-  }
-
-  const ticket = await Ticket.findOne({ ticketId });
-  if (!ticket) {
-    return res.status(404).json({ message: "Ticket not found" });
-  }
-
-  const sender = req.user ? req.user.name : "System";
-  const newReply = {
-    sender: `${sender} (${ticket.assignedDepartment || "Support"})`,
-    receiver: ticket.studentEmail,
-    message,
-    attachments: attachments || [],
-    timestamp: new Date(),
-    direction: "OUTBOUND"
-  };
-
-  ticket.conversation.push(newReply);
-  await ticket.save();
-
-  // Broadcast updates
-  const io = req.app.get("io");
-  if (io) {
-    io.emit("ticket-updated", ticket);
-  }
-
-  // Trigger n8n sending email
-  const n8nUrl = process.env.N8N_EMAIL_SEND_WEBHOOK_URL;
-  triggerN8NWebhook(n8nUrl, {
-    ticketId: ticket.ticketId,
-    studentEmail: ticket.studentEmail,
-    studentName: ticket.studentName,
-    subject: `Re: ${ticket.subject} [${ticket.ticketId}]`,
-    message,
-    attachments: attachments || []
-  });
-
-  // Trigger EmailOutboxWebhook back to student email
-  triggerEmailOutboxWebhook(ticket, {
-    subject: `Re: ${ticket.subject} [${ticket.ticketId}]`,
-    message,
-    attachments: attachments || []
-  }).catch((err) => {
-    console.error("[Ticket Controller] Failed to trigger EmailOutboxWebhook from webhookOutgoingEmail:", err.message);
-  });
-
-  res.json(ticket);
-}
-
-// Webhook 5: Inbound Reply Sync (when student replies back to an email thread)
-export async function webhookReplySync(req, res) {
-  try {
-    const { senderEmail, subject, body, attachments } = req.body;
-
-    if (!senderEmail || !subject || !body) {
-      return res.status(400).json({ message: "senderEmail, subject, and body are required" });
-    }
-
-    // Match the ticket ID in subject, e.g. [TKT-8291]
-    const match = subject.match(/\[(TKT-\d+)\]/);
-    let ticket = null;
-
-    if (match) {
-      const ticketId = match[1];
-      ticket = await Ticket.findOne({ ticketId });
-    }
-
-    // Fallback: search by student email and status = Active
-    if (!ticket) {
-      ticket = await Ticket.findOne({ studentEmail: senderEmail.trim(), status: "Active" }).sort({ updatedAt: -1 });
-    }
-
-    if (!ticket) {
-      return res.status(404).json({ message: "No matching active ticket found for this reply" });
-    }
-
-    const newReply = {
-      sender: senderEmail,
-      receiver: ticket.destinationEmail || "support@skillit.com",
-      message: body,
-      attachments: attachments || [],
-      timestamp: new Date(),
-      direction: "INBOUND"
-    };
-
-    ticket.conversation.push(newReply);
-    ticket.updatedAt = new Date();
-    await ticket.save();
-
-    // Broadcast updates
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("ticket-updated", ticket);
-    }
-
-    res.json(ticket);
-  } catch (error) {
-    console.error("Error in webhookReplySync:", error);
-    res.status(500).json({ message: "Error syncing reply" });
-  }
-}
-
-// Webhook 6: Ticket Assignment (called by n8n or direct)
-export async function webhookTicketAssign(req, res) {
-  const { ticketId, department } = req.body;
-  if (!ticketId || !department) {
-    return res.status(400).json({ message: "ticketId and department are required" });
-  }
-
-  req.params.id = ticketId;
-  req.body.department = department;
-  return assignTicket(req, res);
-}
-
-// Webhook 7: Ticket Resolution (called by n8n or direct)
-export async function webhookTicketResolve(req, res) {
-  const { ticketId } = req.body;
-  if (!ticketId) {
-    return res.status(400).json({ message: "ticketId is required" });
-  }
-
-  req.params.id = ticketId;
-  return resolveTicket(req, res);
-}

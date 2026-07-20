@@ -9,7 +9,8 @@ import studentRoutes from "./routes/students.js";
 import adminRoutes from "./routes/admin.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import ticketRoutes from "./routes/tickets.js";
-import webhookRoutes from "./routes/webhooks.js";
+import emailRoutes from "./routes/emails.js";
+import { setSocketIo, startInboxMonitoring } from "./services/inboxService.js";
 
 const app = express();
 app.use(cors());
@@ -30,6 +31,7 @@ const io = new Server(server, {
 });
 
 app.set("io", io);
+setSocketIo(io);
 
 io.on("connection", (socket) => {
   console.log(`Socket client connected: ${socket.id}`);
@@ -45,9 +47,11 @@ app.use("/api/students", studentRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/tickets", ticketRoutes);
-// Mount webhook routes both under /webhooks and /email to support all requirements
-app.use("/api/webhooks", webhookRoutes);
-app.use("/api/email", webhookRoutes);
+app.use("/api/emails", emailRoutes);
+
+// Retain alias paths to ensure simulation buttons in frontend testing environments continue to operate natively
+app.use("/api/webhooks", emailRoutes);
+app.use("/api/email", emailRoutes);
 
 // Fallback error handler so a thrown/rejected promise doesn't crash silently
 app.use((err, _req, res, _next) => {
@@ -58,6 +62,7 @@ app.use((err, _req, res, _next) => {
 const PORT = process.env.PORT || 4000;
 
 connectDB().then(() => {
+  startInboxMonitoring();
   server.listen(PORT, () => {
     console.log(`SkillIT CRM API running on http://localhost:${PORT}`);
   });

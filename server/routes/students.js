@@ -8,7 +8,14 @@ import {
   transferStudent, listTransferTargets,
 } from "../controllers/studentController.js";
 
+import { requestPasswordReset, resetPassword, verifyEmail } from "../controllers/emailController.js";
+
 const router = Router();
+
+// Public routes for student self-service (Password Reset & Verification)
+router.post("/reset-password", requestPasswordReset);
+router.post("/confirm-reset", resetPassword);
+router.post("/verify-email", verifyEmail);
 
 router.use(requireAuth); // every route below requires a valid JWT (and, per
 // middleware/auth.js, a freshly-reloaded, currently-Active user — never a

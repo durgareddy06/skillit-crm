@@ -7,7 +7,7 @@ import {
   verifyWebhookSignature,
   fetchRazorpayPaymentDetails,
 } from "../services/paymentService.js";
-import { triggerPaymentWebhook } from "../services/webhookService.js";
+import * as emailService from "../services/emailService.js";
 
 /**
  * Initiates payment order with Razorpay
@@ -100,6 +100,7 @@ export async function verifyPayment(req, res) {
       signature: razorpay_signature,
       studentId,
       paymentLinkId,
+      req,
     });
 
     if (!result.success) {
@@ -166,6 +167,7 @@ export async function handleWebhook(req, res) {
             signature: paymentEntity.signature || "webhook_captured",
             studentId: transaction.studentId,
             paymentLinkId: transaction.paymentLinkId,
+            req,
           });
         }
       }
@@ -183,7 +185,7 @@ export async function handleWebhook(req, res) {
         });
         await transaction.save();
 
-        // Trigger outbound PaymentWebhook for failed payment
+        // Send payment failure notification email natively
         const student = await Student.findById(transaction.studentId);
         if (student) {
           let invoiceLink = "";
@@ -193,15 +195,8 @@ export async function handleWebhook(req, res) {
               invoiceLink = link.url || "";
             }
           }
-          triggerPaymentWebhook({
-            event: "payment.failed",
-            student,
-            amount: transaction.amount,
-            link: invoiceLink,
-            transactionId: transaction._id.toString(),
-            errorReason: transaction.errorReason
-          }).catch((err) => {
-            console.error("[Payment Controller] Failed to trigger PaymentWebhook (failed):", err.message);
+          emailService.sendPaymentFailureEmail(student, transaction.amount, transaction.errorReason, invoiceLink).catch((err) => {
+            console.error("[Payment Controller] Failed to send payment failure email:", err.message);
           });
         }
       }
@@ -215,9 +210,9 @@ export async function handleWebhook(req, res) {
 }
 
 /**
- * Helper logic to mark payment as successful in DB and trigger n8n hooks (idempotent)
+ * Helper logic to mark payment as successful in DB (idempotent)
  */
-async function processPaymentSuccess({ orderId, paymentId, signature, studentId, paymentLinkId }) {
+async function processPaymentSuccess({ orderId, paymentId, signature, studentId, paymentLinkId, req = null }) {
   const transaction = await PaymentTransaction.findOne({ orderId });
   if (!transaction) {
     return { success: false, message: "Transaction not found for this order" };
@@ -282,16 +277,92 @@ async function processPaymentSuccess({ orderId, paymentId, signature, studentId,
 
   await student.save();
 
-  // Trigger outbound PaymentWebhook to n8n asynchronously
-  triggerPaymentWebhook({
-    event: "payment.success",
+  // Trigger native payment success email (attaches invoice PDF and receipt)
+  emailService.sendPaymentSuccessEmail(
     student,
-    amount: linkAmount,
-    link: invoiceLink,
-    transactionId: transaction._id.toString()
-  }).catch((err) => {
-    console.error("[Payment Controller] Failed to trigger PaymentWebhook (success):", err.message);
+    paymentId,
+    linkAmount,
+    paymentRecord.paidDate,
+    student.course || student.program || "Course Fee"
+  ).catch((err) => {
+    console.error("[Payment Controller] Failed to send payment success email:", err.message);
   });
 
+  // Broadcast payment update via Socket.IO
+  const io = req ? req.app.get("io") : null;
+  if (io) {
+    io.emit("payment-success", { studentId: student._id, amount: linkAmount, student });
+    io.emit("student-updated", student);
+  }
+  
   return { success: true, student };
+}
+
+/**
+ * Confirm Payment (REST API wrapper over verifyPayment)
+ */
+export async function confirmPayment(req, res) {
+  return verifyPayment(req, res);
+}
+
+/**
+ * Process a Payment Refund natively
+ */
+export async function refundPayment(req, res) {
+  try {
+    const { transactionId } = req.body;
+    if (!transactionId) {
+      return res.status(400).json({ message: "transactionId is required" });
+    }
+
+    const transaction = await PaymentTransaction.findById(transactionId);
+    if (!transaction) {
+      return res.status(404).json({ message: "Transaction not found" });
+    }
+
+    if (transaction.status === "refunded") {
+      return res.status(400).json({ message: "This transaction is already refunded" });
+    }
+
+    // Update transaction status
+    transaction.status = "refunded";
+    await transaction.save();
+
+    // Find student and update records
+    const student = await Student.findById(transaction.studentId);
+    if (student) {
+      const refundAmount = transaction.amount;
+      student.paidAmount = Math.max(0, student.paidAmount - refundAmount);
+
+      const netPayable = Math.max(0, Number(student.saleValue || 0) - Number(student.discount || 0));
+      student.outstanding = Math.max(0, netPayable - student.paidAmount);
+      student.paymentLinkStatus = student.outstanding === 0 ? "Paid" : "Refunded / Partial";
+
+      if (student.payments) {
+        const paymentIndex = student.payments.findIndex(p => p.refId === transaction.paymentId);
+        if (paymentIndex !== -1) {
+          student.payments[paymentIndex].mode = `${student.payments[paymentIndex].mode} (Refunded)`;
+        }
+      }
+
+      await student.save();
+
+      // Send refund email natively
+      emailService.sendRefundEmail(student, transaction.paymentId || transactionId, refundAmount, new Date().toLocaleDateString("en-GB")).catch((err) => {
+        console.error("[Payment Controller] Failed to send refund email:", err.message);
+      });
+
+      // Broadcast via Socket.IO
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("payment-refunded", { studentId: student._id, transactionId, refundAmount, student });
+        io.emit("student-updated", student);
+      }
+    }
+
+    res.json({ success: true, message: "Payment refunded and registered", transaction });
+  } catch (error) {
+    console.error("Error in refundPayment:", error);
+    res.status(500).json({ message: error.message || "Failed to process refund" });
+  }
 }

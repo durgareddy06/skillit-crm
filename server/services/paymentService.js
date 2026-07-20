@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-// Read Razorpay and n8n environment variables
+// Read Razorpay environment variables
 const getRazorpayConfig = () => {
   const keyId = process.env.RAZORPAY_KEY_ID;
   const keySecret = process.env.RAZORPAY_KEY_SECRET;

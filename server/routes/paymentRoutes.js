@@ -1,14 +1,20 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { createOrder, verifyPayment, handleWebhook } from "../controllers/paymentController.js";
+import { createOrder, verifyPayment, handleWebhook, confirmPayment, refundPayment } from "../controllers/paymentController.js";
 
 const router = Router();
 
-// Webhook endpoint (Razorpay payload notification - must be public)
+// ==============================================================================
+// #1 PAYMENT MODULE - WEBHOOK LISTENER (RAZORPAY PAYLOAD NOTIFICATION)
+// ==============================================================================
 router.post("/webhook", handleWebhook);
 
-// Protected routes (require user authentication)
+// ==============================================================================
+// #2 PAYMENT MODULE - ORDERS, VERIFICATION, CONFIRMATION & REFUNDS
+// ==============================================================================
 router.post("/order", requireAuth, createOrder);
 router.post("/verify", requireAuth, verifyPayment);
+router.post("/confirm", requireAuth, confirmPayment);
+router.post("/refund", requireAuth, refundPayment);
 
 export default router;

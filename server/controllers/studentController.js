@@ -1,7 +1,7 @@
 import Student from "../models/Student.js";
 import User from "../models/User.js";
 import { nextStudentId } from "../models/Counter.js";
-import { triggerStudentWebhook, triggerPaymentWebhook } from "../services/webhookService.js";
+import * as emailService from "../services/emailService.js";
 import {
   getReportingManagerId,
   getOwnershipFilter,
@@ -293,9 +293,9 @@ export async function createStudent(req, res) {
     department: b.department || (String(req.user?.designation || "").toLowerCase().includes("mis") ? "Operations" : "Sales"),
   });
 
-  // Trigger outbound StudentWebhook to n8n asynchronously
-  triggerStudentWebhook(student).catch((err) => {
-    console.error("[Student Controller] Failed to trigger StudentWebhook:", err.message);
+  // Send welcome email natively
+  emailService.sendWelcomeEmail(student).catch((err) => {
+    console.error("[Student Controller] Failed to send welcome email:", err.message);
   });
 
   res.status(201).json(student);
@@ -341,16 +341,6 @@ export async function generatePaymentLink(req, res) {
   student.paymentLinkStatus = "Pending";
   student.paymentLinkUrl = url;
   await student.save();
-
-  // Trigger PaymentWebhook for link creation
-  triggerPaymentWebhook({
-    event: "payment.link_created",
-    student,
-    amount,
-    link: url
-  }).catch((err) => {
-    console.error("[Student Controller] Failed to trigger PaymentWebhook for link creation:", err.message);
-  });
 
   res.json(student);
 }
@@ -579,7 +569,37 @@ export async function editStudent(req, res) {
   if (!(await canAccessStudent(req, student.toObject()))) {
     return res.status(404).json({ message: "Student not found" });
   }
+
+  const originalEmail = student.email || "";
+  const originalName = student.customerName || "";
+  const originalContact = student.contactNumber || "";
+  const originalStatus = student.status || "";
+
   Object.assign(student, req.body || {});
   await student.save();
+
+  // Determine if important profile details have been altered
+  const emailChanged = req.body.email && req.body.email.trim().toLowerCase() !== originalEmail.trim().toLowerCase();
+  const nameChanged = req.body.customerName && req.body.customerName.trim() !== originalName.trim();
+  const contactChanged = req.body.contactNumber && req.body.contactNumber.trim() !== originalContact.trim();
+  const statusChanged = req.body.status && req.body.status !== originalStatus;
+
+  if (emailChanged || nameChanged || contactChanged || statusChanged) {
+    const recipient = emailChanged ? originalEmail : student.email;
+    const changes = [];
+    if (nameChanged) changes.push(`Name changed from "${originalName}" to "${student.customerName}"`);
+    if (emailChanged) changes.push(`Email changed from "${originalEmail}" to "${student.email}"`);
+    if (contactChanged) changes.push(`Contact number changed from "${originalContact}" to "${student.contactNumber}"`);
+    if (statusChanged) changes.push(`Status changed from "${originalStatus}" to "${student.status}"`);
+
+    emailService.sendGeneralNotificationEmail(
+      { email: recipient, customerName: originalName },
+      "SkillIT Student Profile Update Notification",
+      `Hello ${originalName},<br/><br/>This is to notify you that key details in your student profile were updated:<br/><br/><ul>${changes.map(c => `<li>${c}</li>`).join("")}</ul><br/>If you did not authorize these changes, please contact the academy support desk immediately.`
+    ).catch((err) => {
+      console.error("[Student Controller] Failed to send profile update email:", err.message);
+    });
+  }
+
   res.json(student);
 }

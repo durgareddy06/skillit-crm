@@ -90,6 +90,12 @@ const studentSchema = new mongoose.Schema(
     reportedTo: String,
     department: String,
 
+    passwordHash: { type: String, default: null },
+    isVerified: { type: Boolean, default: false },
+    verificationToken: { type: String, default: null },
+    resetPasswordToken: { type: String, default: null },
+    resetPasswordExpires: { type: Date, default: null },
+
     // Lead-transfer audit trail (append-only, backend-populated only).
     transferHistory: {
       type: [
