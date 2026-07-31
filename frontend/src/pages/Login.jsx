@@ -36,7 +36,7 @@ export default function Login() {
         <div className="absolute bottom-0 right-0 h-56 w-56 rounded-full bg-white/5" />
         <div className="flex items-center gap-3 relative">
           <img
-            src="/skillitacc_logo.svg"
+            src="/skillit_logo.svg"
             alt="SkillIT Academy"
             className="h-10 w-10 rounded-lg object-cover"
             onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = FALLBACK_LOGO; }}
@@ -64,7 +64,7 @@ export default function Login() {
           className="w-full max-w-sm bg-white rounded-2xl shadow-card border border-slate-100 p-8 animate-popIn"
         >
           <img
-            src="/skillitacc_logo.svg"
+            src="/skillit_logo.svg"
             alt="SkillIT Academy"
             className="h-10 w-10 rounded-lg object-cover mb-4 md:hidden"
             onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = FALLBACK_LOGO; }}

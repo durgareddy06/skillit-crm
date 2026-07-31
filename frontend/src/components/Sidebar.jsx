@@ -149,7 +149,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="flex items-center border-b border-slate-100 px-5 pt-5 pb-3">
         <img
-          src="/skillitacc_logo.svg"
+          src="/skillit_logo.svg"
           alt="SkillIT Academy"
           className="h-[75px] w-auto object-contain"
         />
