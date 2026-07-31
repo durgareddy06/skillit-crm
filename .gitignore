@@ -8,10 +8,10 @@ dist/
 build/
 
 # Environment files
-.env
+# .env
 .env.local
 .env.*.local
-**/.env
+# **/.env
 
 # Logs and OS files
 *.log
