@@ -38,6 +38,7 @@ export function isCustomerSupportDesignation(value = "") {
 export function canTransferLead(user) {
   if (!user) return false;
   if (user.role === "admin") return true;
+  if (isSdeDesignation(user.designation || user.role)) return false;
   // Dynamic: any user who has the student/update permission (whether from
   // their own role or inherited from subordinates) can transfer leads.
   // This replaces the old hardcoded Manager/Sr.Manager check.

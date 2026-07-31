@@ -26,7 +26,7 @@ export function buildSupportTableColumns({ nameExtra, onNameClick }) {
               {r.customerName}
             </button>
           ) : (
-            <span className="font-medium text-skillit">{r.customerName}</span>
+            <span className="font-medium text-slate-700">{r.customerName}</span>
           )}
           {nameExtra ? <span className="shrink-0">{nameExtra(r)}</span> : null}
         </span>

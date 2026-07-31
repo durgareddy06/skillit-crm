@@ -146,18 +146,38 @@ export async function createRazorpayPaymentLink(amount, referenceId, customer, s
 
   // Convert amount to paise (subunit)
   const amountInPaise = Math.round(amount * 100);
-
   const authHeader = "Basic " + Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-
   const callbackUrl = `${process.env.FRONTEND_URL || "http://localhost:5174"}/student/${studentId}?context=payments`;
 
-  const response = await fetch("https://api.razorpay.com/v1/payment_links", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": authHeader,
-    },
-    body: JSON.stringify({
+  // Sanitize contact number
+  let sanitizedContact = undefined;
+  if (customer.contact) {
+    const cleaned = String(customer.contact).replace(/[^0-9+]/g, "");
+    const digits = cleaned.replace(/[^0-9]/g, "");
+    if (digits.length >= 10 && !/^(.)\1+$/.test(digits)) {
+      if (cleaned.startsWith("+")) {
+        sanitizedContact = cleaned;
+      } else if (digits.length === 10) {
+        sanitizedContact = `+91${digits}`;
+      } else if (digits.length === 12 && digits.startsWith("91")) {
+        sanitizedContact = `+${digits}`;
+      } else {
+        sanitizedContact = `+${digits}`;
+      }
+    }
+  }
+
+  // Sanitize email
+  let sanitizedEmail = undefined;
+  if (customer.email) {
+    const emailStr = String(customer.email).trim();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr)) {
+      sanitizedEmail = emailStr;
+    }
+  }
+
+  const makeRequest = async (withCustomerDetails) => {
+    const payload = {
       amount: amountInPaise,
       currency: "INR",
       accept_partial: false,
@@ -165,8 +185,6 @@ export async function createRazorpayPaymentLink(amount, referenceId, customer, s
       description: `Course fee payment for student ID: ${studentId}`,
       customer: {
         name: customer.name || "Student",
-        email: customer.email || undefined,
-        contact: customer.contact || undefined,
       },
       notify: {
         sms: false,
@@ -179,15 +197,46 @@ export async function createRazorpayPaymentLink(amount, referenceId, customer, s
       },
       callback_url: callbackUrl,
       callback_method: "get",
-    }),
-  });
+    };
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Razorpay payment link creation failed: ${response.status} - ${errorText}`);
+    if (withCustomerDetails) {
+      if (sanitizedEmail) payload.customer.email = sanitizedEmail;
+      if (sanitizedContact) payload.customer.contact = sanitizedContact;
+    }
+
+    const response = await fetch("https://api.razorpay.com/v1/payment_links", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": authHeader,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Razorpay payment link creation failed: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  };
+
+  try {
+    return await makeRequest(true);
+  } catch (error) {
+    console.error("First attempt to create Razorpay payment link failed:", error.message);
+    if (sanitizedEmail || sanitizedContact) {
+      console.log("Retrying Razorpay payment link creation without email/contact info...");
+      try {
+        return await makeRequest(false);
+      } catch (retryError) {
+        console.error("Fallback attempt to create Razorpay payment link failed:", retryError.message);
+        throw retryError;
+      }
+    } else {
+      throw error;
+    }
   }
-
-  return response.json();
 }
 
 /**

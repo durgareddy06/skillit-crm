@@ -70,18 +70,16 @@ const DEFAULT_STUDENT_FORMS = [
 ];
 
 const DEFAULT_STUDENT_DROPDOWNS = [
-  makeSection("Category", "options", ["Fresher", "Working Professional", "Career Break", "Student", "Entrepreneur", "Other"].map(makeOption)),
+  makeSection("Category", "options", ["Fresher", "Working Professional", "Career Break", "Student", "Other"].map(makeOption)),
   makeSection("Course", "options", [
     "Data Science and Data Analytics (DADS)",
     "Full Stack Development (FSD)",
     "UI/UX Design",
   ].map(makeOption)),
   makeSection("Program", "options", [
-    "Master's Program",
-    "Advanced Program",
-    "Professional Certification",
-    "Diploma Program",
-    "Short Course",
+    "Data Science and Data Analytics",
+    "Full Stack Development (FSD)",
+    "UI/UX Design",
   ].map(makeOption)),
   makeSection("Batch", "options", ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"].map(makeOption)),
   makeSection("Payment Mode", "options", ["Payment Link", "Cash", "Bank Transfer", "UPI", "Cheque", "EMI", "DD (Demand Draft)"].map(makeOption)),

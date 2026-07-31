@@ -19,7 +19,6 @@ const CATEGORY_OPTIONS = [
   "Working Professional",
   "Career Break",
   "Student",
-  "Entrepreneur",
   "Other",
 ];
 
@@ -35,11 +34,9 @@ const COURSE_OPTIONS = [
 ];
 
 const PROGRAM_OPTIONS = [
-  "Master's Program",
-  "Advanced Program",
-  "Professional Certification",
-  "Diploma Program",
-  "Short Course",
+  "Data Science and Data Analytics",
+  "Full Stack Development (FSD)",
+  "UI/UX Design",
 ];
 
 const BATCH_OPTIONS = [

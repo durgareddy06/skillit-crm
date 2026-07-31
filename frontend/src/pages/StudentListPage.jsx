@@ -24,7 +24,7 @@ import Button from "../components/Button";
 import { Field, Input, PhoneInput, Select, formatPhoneDisplay, todayDateInputValue } from "../components/Field";
 import { listStudents, dropStudent, generatePaymentLink, updateStudent, getPaymentInvoice, getHierarchyFilters, cancelPaymentLink } from "../api/students";
 import { useAuth } from "../context/AuthContext";
-import { canUsePermission, hasActionPermission } from "../lib/permissions";
+import { canUsePermission, hasActionPermission, hasPermission } from "../lib/permissions";
 import { canTransferLead } from "../lib/userHierarchy";
 import TransferLeadModal from "../components/TransferLeadModal";
 import PaymentDetailsDrawer from "../components/PaymentDetailsDrawer";
@@ -422,6 +422,20 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
   const canCreatePaymentLink = hasActionPermission(user, "generate-payment-link");
   const canTransferStudent = canTransferLead(user) && canUpdateStudent;
 
+  const getContextKey = () => {
+    if (view === "pending") return "pending";
+    if (view === "payment-link") return "payment-link";
+    if (view === "payments") return "payments";
+    if (view === "booked-orders") return "booked-orders";
+    if (view === "enrolled") return "enrolled";
+    if (view === "cancelled") return "cancelled";
+    if (view === "mis-approval") return "mis-approval";
+    if (view === "approved") return "approved";
+    return "student";
+  };
+  const contextKey = getContextKey();
+  const canViewDetails = hasPermission(user, contextKey, "details");
+
   useEffect(() => {
     if (!isPaymentLinkModule) return;
     const link = location.state?.generatedLink;
@@ -744,17 +758,21 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
           width: "220px",
           cellClassName: "whitespace-nowrap",
               render: (r) => (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/student/${r.studentId || r.id}?context=payment-link`);
-                  }}
-                  className="inline-flex items-center rounded-full px-2 py-1 font-medium text-skillit transition-colors hover:bg-blue-50"
-                >
-                  {r.customerName}
-                </button>
-          ),
+                canViewDetails ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/student/${r.studentId || r.id}?context=payment-link`);
+                    }}
+                    className="inline-flex items-center rounded-full px-2 py-1 font-medium text-skillit transition-colors hover:bg-blue-50"
+                  >
+                    {r.customerName}
+                  </button>
+                ) : (
+                  <span className="font-medium text-slate-700 px-2 py-1">{r.customerName}</span>
+                )
+              ),
         },
         { key: "program", label: "Program", width: "220px", cellClassName: "whitespace-nowrap" },
         { key: "uniqueId", label: "Unique ID", width: "140px", cellClassName: "whitespace-nowrap" },
@@ -816,16 +834,20 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
               >
                 <FileText className="h-4 w-4" />
               </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(`/student/${r.studentId}?context=payments`);
-                }}
-                className="inline-flex items-center font-medium text-skillit transition-colors hover:underline"
-              >
-                {r.customerName}
-              </button>
+              {canViewDetails ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/student/${r.studentId}?context=payments`);
+                  }}
+                  className="inline-flex items-center font-medium text-skillit transition-colors hover:underline"
+                >
+                  {r.customerName}
+                </button>
+              ) : (
+                <span className="font-medium text-slate-700">{r.customerName}</span>
+              )}
             </div>
           ),
         },
@@ -849,8 +871,8 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
           width: "220px",
           cellClassName: "whitespace-nowrap",
           render: (r) => (
-            isBookedOrdersModule || isEnrolledModule ? (
-              <span className="font-medium text-slate-700">{r.customerName}</span>
+            isBookedOrdersModule || isEnrolledModule || !canViewDetails ? (
+              <span className="font-medium text-slate-700 px-2 py-1">{r.customerName}</span>
             ) : (
               <button
                 type="button"
@@ -890,7 +912,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
 
     if (!isStudentModule) {
       return [
-        { key: "customerName", label: "Customer Name", render: (r) => <span className="font-medium text-skillit">{r.customerName}</span> },
+        { key: "customerName", label: "Customer Name", render: (r) => <span className={canViewDetails ? "font-medium text-skillit" : "font-medium text-slate-700"}>{r.customerName}</span> },
         { key: "date", label: "Date" },
         { key: "month", label: "Month" },
         { key: "cycle", label: "Cycle" },
@@ -904,7 +926,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
       {
         key: "customerName",
         label: "Student Name",
-        render: (r) => <span className="font-medium text-skillit">{r.customerName}</span>,
+        render: (r) => <span className={canViewDetails ? "font-medium text-skillit" : "font-medium text-slate-700"}>{r.customerName}</span>,
       },
       { key: "program", label: "Program" },
       { key: "uniqueId", label: "Unique ID" },
@@ -1247,7 +1269,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
           columns={columns}
           rows={showPagedTable ? pageRows : filtered}
           onRowClick={
-            isBookedOrdersModule || isEnrolledModule
+            !canViewDetails || isBookedOrdersModule || isEnrolledModule
               ? undefined
               : isStudentModule
                 ? (row) => navigate(`/student/${row.id}`)

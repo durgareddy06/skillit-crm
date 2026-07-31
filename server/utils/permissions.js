@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Role from "../models/Role.js";
 import Module from "../models/Module.js";
 import User from "../models/User.js";
+import { isSdeDesignation } from "./userHierarchy.js";
 
 // Lazy-load hierarchy.js to break the circular dependency
 // (hierarchy.js statically imports from permissions.js).
@@ -305,6 +306,7 @@ export async function userHasActionPermission(user, actionKey, context) {
     return await userHasPermission(user, contextKey, "update");
   }
   if (actionKey === "transfer-lead") {
+    if (isSdeDesignation(user.designation || user.role)) return false;
     return await userHasPermission(user, "student", "update");
   }
 
