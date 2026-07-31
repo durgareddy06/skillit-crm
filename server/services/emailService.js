@@ -34,7 +34,7 @@ const getTransporter = () => {
 };
 
 // ==============================================================================
-// #2 NATIVE PDF INVOICE & RECEIPT GENERATOR
+// #2 NATIVE PDF FEE RECEIPT GENERATOR
 // ==============================================================================
 export function generateInvoicePDF({ studentName, studentId, email, transactionId, amount, date }) {
   return new Promise((resolve, reject) => {
@@ -47,9 +47,9 @@ export function generateInvoicePDF({ studentName, studentId, email, transactionI
 
       doc.rect(0, 0, 612, 100).fill("#4f46e5");
       doc.fillColor("#ffffff").fontSize(26).text("SkillIT Academy", 50, 35, { bold: true });
-      doc.fontSize(10).text("OFFICIAL INVOICE & RECEIPT", 400, 48, { align: "right" });
+      doc.fontSize(10).text("OFFICIAL FEE RECEIPT", 400, 48, { align: "right" });
 
-      doc.fillColor("#1e293b").fontSize(12).text(`Invoice No: INV-${transactionId.substring(0, 8).toUpperCase()}`, 50, 130);
+      doc.fillColor("#1e293b").fontSize(12).text(`Receipt No: REC-${transactionId.substring(0, 8).toUpperCase()}`, 50, 130);
       doc.text(`Date: ${date}`, 50, 145);
       doc.text(`Transaction ID: ${transactionId}`, 50, 160);
 
@@ -74,7 +74,7 @@ export function generateInvoicePDF({ studentName, studentId, email, transactionI
 
       doc.fontSize(12).text(`Total Paid: ₹${amount}`, 350, 310, { bold: true, width: 212, align: "right" });
 
-      doc.fontSize(9).fillColor("#64748b").text("This is a computer generated invoice and does not require a physical signature.", 50, 400, { align: "center" });
+      doc.fontSize(9).fillColor("#64748b").text("This is a computer generated fee receipt and does not require a physical signature.", 50, 400, { align: "center" });
       doc.text("Contact Support: support@skillit.com | +91 98765 43210", 50, 415, { align: "center" });
 
       doc.end();
@@ -154,7 +154,7 @@ export async function sendEmail({ to, subject, html, attachments = [], retries =
 // #4 STUDENT MODULE EMAIL INTEGRATIONS
 // ==============================================================================
 export async function sendWelcomeEmail(student, tempPassword = null) {
-  const loginUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`;
+  const loginUrl = `${process.env.FRONTEND_URL || "http://localhost:5174"}/login`;
   const html = templates.getWelcomeTemplate({
     name: student.customerName,
     email: student.email,
@@ -173,7 +173,7 @@ export async function sendWelcomeEmail(student, tempPassword = null) {
 // #5 FORGOT PASSWORD & AUTHENTICATION MODULE INTEGRATIONS
 // ==============================================================================
 export async function sendPasswordResetEmail(student, resetToken) {
-  const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${resetToken}`;
+  const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:5174"}/reset-password?token=${resetToken}`;
   const html = templates.getPasswordResetTemplate({
     name: student.customerName,
     resetUrl,
@@ -188,7 +188,7 @@ export async function sendPasswordResetEmail(student, resetToken) {
 }
 
 export async function sendEmailVerificationEmail(student, verificationToken) {
-  const verificationUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/verify-email?token=${verificationToken}`;
+  const verificationUrl = `${process.env.FRONTEND_URL || "http://localhost:5174"}/verify-email?token=${verificationToken}`;
   const html = templates.getEmailVerificationTemplate({
     name: student.customerName,
     verificationUrl,
@@ -224,7 +224,7 @@ export async function sendPaymentSuccessEmail(student, transactionId, amount, da
       date,
     });
     attachments.push({
-      filename: `invoice_${transactionId}.pdf`,
+      filename: `receipt_${transactionId}.pdf`,
       content: pdfBuffer,
       contentType: "application/pdf",
     });
@@ -329,6 +329,63 @@ export async function sendGeneralNotificationEmail(student, title, message) {
   return sendEmail({
     to: student.email,
     subject: title,
+    html,
+  });
+}
+
+// ==============================================================================
+// #9 STATUS TRANSITION WORKFLOW EMAILS
+// ==============================================================================
+export async function sendOrderPunchedEmail(student) {
+  const html = templates.getOrderPunchedTemplate({
+    name: student.customerName,
+    program: student.program || student.course || "SkillIT Program",
+    date: student.orderPunchedAt || new Date().toLocaleString("en-GB"),
+  });
+  return sendEmail({
+    to: student.email,
+    subject: `Order Punched Successfully! - ${student.program || student.course || "SkillIT Program"}`,
+    html,
+  });
+}
+
+export async function sendAdmissionApprovedEmail(student) {
+  const html = templates.getAdmissionApprovedTemplate({
+    name: student.customerName,
+    program: student.program || student.course || "SkillIT Program",
+  });
+  return sendEmail({
+    to: student.email,
+    subject: `Admission Approved! - ${student.program || student.course || "SkillIT Program"}`,
+    html,
+  });
+}
+
+export async function sendOnboardingEmail(student) {
+  const html = templates.getOnboardingTemplate({
+    name: student.customerName,
+    program: student.program || student.course || "SkillIT Program",
+    batch: student.batch || "Not Assigned Yet",
+    onboardingDate: student.onboardingDate || "",
+  });
+  return sendEmail({
+    to: student.email,
+    subject: `Onboarding Confirmed! Assigned Batch: ${student.batch || "N/A"}`,
+    html,
+  });
+}
+
+export async function sendOrientationEmail(student) {
+  const html = templates.getOrientationTemplate({
+    name: student.customerName,
+    program: student.program || student.course || "SkillIT Program",
+    orientationDate: student.orientationDate || "N/A",
+    orientationLink: student.orientationLink || "#",
+    instructions: student.internalRemarks || "",
+  });
+  return sendEmail({
+    to: student.email,
+    subject: `Orientation Session Details - ${student.program || student.course || "SkillIT Program"}`,
     html,
   });
 }

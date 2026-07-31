@@ -257,7 +257,7 @@ export const getPaymentSuccessTemplate = ({ name, amount, date, transactionId, p
       </tr>
     </table>
 
-    <p>We have attached the Invoice PDF and transaction Receipt to this email for your records.</p>
+    <p>We have attached the Fee Receipt PDF to this email for your records.</p>
     <p>Happy learning!</p>
   `, `Payment received for ${productName || "SkillIT"}`);
 };
@@ -405,4 +405,84 @@ export const getGeneralNotificationTemplate = ({ title, message }) => {
     <h2>${title}</h2>
     <p>${message}</p>
   `, title);
+};
+
+// ==============================================================================
+// #7 STATUS TRANSITION WORKFLOW TEMPLATES
+// ==============================================================================
+export const getOrderPunchedTemplate = ({ name, program, date }) => {
+  return baseLayout(`
+    <h2>Hello ${name},</h2>
+    <p>We are pleased to inform you that your program order has been successfully placed.</p>
+    <table class="info-table">
+      <tr>
+        <td class="label">Program Name</td>
+        <td class="value">${program}</td>
+      </tr>
+      <tr>
+        <td class="label">Order Date</td>
+        <td class="value">${date}</td>
+      </tr>
+    </table>
+    <p>Our academic admissions team will review your order details and follow up on the next steps for your enrollment.</p>
+    <p>Happy learning!</p>
+  `, `Order Punched Confirmation for ${name}`);
+};
+
+export const getAdmissionApprovedTemplate = ({ name, program }) => {
+  return baseLayout(`
+    <h2>Hello ${name},</h2>
+    <p>Congratulations! Your admission to the <strong>${program}</strong> has been officially approved by our admissions team.</p>
+    <p>You are now being moved to the Orientation process. You will receive orientation details and schedules shortly.</p>
+    <p>Welcome to SkillIT!</p>
+  `, `Admission Approved - ${name}`);
+};
+
+export const getOnboardingTemplate = ({ name, program, batch, onboardingDate }) => {
+  return baseLayout(`
+    <h2>Hello ${name},</h2>
+    <p>Your onboarding process is complete, and you have been assigned to your batch!</p>
+    <table class="info-table">
+      <tr>
+        <td class="label">Program</td>
+        <td class="value">${program}</td>
+      </tr>
+      <tr>
+        <td class="label">Assigned Batch</td>
+        <td class="value">${batch}</td>
+      </tr>
+      ${onboardingDate ? `
+      <tr>
+        <td class="label">Onboarding Date</td>
+        <td class="value">${onboardingDate}</td>
+      </tr>` : ""}
+    </table>
+    <p>Get ready to start your learning journey. Your batch coordinators will contact you soon with the launch links and portals.</p>
+  `, `Onboarding Confirmation - ${name}`);
+};
+
+export const getOrientationTemplate = ({ name, program, orientationDate, orientationLink, instructions }) => {
+  return baseLayout(`
+    <h2>Hello ${name},</h2>
+    <p>You have been scheduled for the Orientation process for <strong>${program}</strong>. Please find the joining details below:</p>
+    <table class="info-table">
+      <tr>
+        <td class="label">Orientation Date/Time</td>
+        <td class="value">${orientationDate}</td>
+      </tr>
+      <tr>
+        <td class="label">Meeting Link</td>
+        <td class="value"><a href="${orientationLink}" target="_blank">${orientationLink}</a></td>
+      </tr>
+    </table>
+    ${instructions ? `
+    <h3>Instructions</h3>
+    <div class="quote-box" style="font-style: normal;">
+      ${instructions.replace(/\n/g, "<br/>")}
+    </div>` : ""}
+    <div class="button-container">
+      <a href="${orientationLink}" class="button" target="_blank">Join Orientation Session</a>
+    </div>
+    <p>Please make sure to join on time and from a quiet location with a stable internet connection.</p>
+  `, `Orientation Details - ${name}`);
 };

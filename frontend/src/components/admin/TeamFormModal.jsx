@@ -40,7 +40,7 @@ export default function TeamFormModal({ open, onClose, onSave, onAssignUsers, te
   };
 
   const managerOptions = useMemo(
-    () => managers.filter((m) => isManagerDesignation(m.designation) || isSrManagerDesignation(m.designation)),
+    () => managers.filter((m) => !isSdeDesignation(m.designation || m.role)),
     [managers]
   );
 
@@ -53,13 +53,14 @@ export default function TeamFormModal({ open, onClose, onSave, onAssignUsers, te
       for (const memberId of otherTeam.members || []) {
         const user = allUsers.find((u) => String(u.id) === String(memberId));
         const designation = user?.designation || user?.role || "";
-        const restricted = user && (isSdeDesignation(designation) || isManagerDesignation(designation));
+        const restricted = user && isSdeDesignation(designation);
         if (restricted) blockedIds.add(String(memberId));
       }
     }
 
     return allUsers.filter((user) => {
       const userId = String(user.id);
+      if (team && String(team.manager) === userId) return false;
       return currentTeamMemberIds.has(userId) || !blockedIds.has(userId);
     });
   }, [allUsers, team, teams]);

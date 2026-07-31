@@ -18,6 +18,29 @@ const moduleSchema = new mongoose.Schema(
     badgeKey: { type: String, default: null },
     order: { type: Number, default: 0 },
     status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
+    actions: {
+      type: [
+        {
+          key: { type: String, required: true, trim: true },
+          label: { type: String, required: true, trim: true },
+          fields: {
+            type: [
+              {
+                key: { type: String, required: true, trim: true },
+                name: { type: String, required: true, trim: true },
+                type: { type: String, enum: ["text", "number", "string"], default: "text" },
+              },
+            ],
+            default: [],
+          },
+        },
+      ],
+      default: [],
+    },
+    config: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
   },
   { timestamps: true }
 );

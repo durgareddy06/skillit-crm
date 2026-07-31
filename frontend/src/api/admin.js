@@ -2,8 +2,12 @@ import api from "./axios";
 
 // Users
 export const listUsers = () => api.get("/admin/users").then((r) => r.data.users);
+export const listArchivedUsers = () => api.get("/admin/users/archived").then((r) => r.data.users);
+export const getUserHistoricalData = (id) => api.get(`/admin/users/${id}/historical-data`).then((r) => r.data);
 export const createUser = (payload) => api.post("/admin/users", payload).then((r) => r.data.user);
 export const updateUser = (id, payload) => api.patch(`/admin/users/${id}`, payload).then((r) => r.data.user);
+export const archiveUser = (id) => api.delete(`/admin/users/${id}`).then((r) => r.data);
+export const restoreUser = (id) => api.post(`/admin/users/${id}/restore`).then((r) => r.data);
 export const deleteUser = (id) => api.delete(`/admin/users/${id}`).then((r) => r.data);
 export const resetPassword = (id, password) =>
   api.post(`/admin/users/${id}/reset-password`, { password }).then((r) => r.data);
@@ -16,6 +20,8 @@ export const createTeam = (payload) => api.post("/admin/teams", payload).then((r
 export const updateTeam = (id, payload) => api.patch(`/admin/teams/${id}`, payload).then((r) => r.data.team);
 export const assignUsersToTeam = (id, userIds) =>
   api.post(`/admin/teams/${id}/assign-users`, { userIds }).then((r) => r.data.team);
+export const transferTeamMembers = (id, toTeamId) =>
+  api.post(`/admin/teams/${id}/transfer-members`, { toTeamId }).then((r) => r.data);
 export const deleteTeam = (id) => api.delete(`/admin/teams/${id}`).then((r) => r.data);
 
 // Roles
@@ -23,6 +29,8 @@ export const listRoles = () => api.get("/admin/roles").then((r) => r.data.roles)
 export const getRole = (id) => api.get(`/admin/roles/${id}`).then((r) => r.data.role);
 export const createRole = (payload) => api.post("/admin/roles", payload).then((r) => r.data.role);
 export const updateRole = (id, payload) => api.patch(`/admin/roles/${id}`, payload).then((r) => r.data.role);
+export const transferRoleUsers = (id, toRoleId) =>
+  api.post(`/admin/roles/${id}/transfer-users`, { toRoleId }).then((r) => r.data);
 export const deleteRole = (id) => api.delete(`/admin/roles/${id}`).then((r) => r.data);
 
 // Modules — the database-driven registry of assignable modules.

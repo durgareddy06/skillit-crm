@@ -24,6 +24,8 @@ import StatCard from "../components/StatCard";
 import DataTable from "../components/DataTable";
 import Button from "../components/Button";
 import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../lib/permissions";
+import { useNavigate } from "react-router-dom";
 import {
   getTickets,
   getTicketById,
@@ -62,6 +64,8 @@ const EMAIL_TEMPLATES = [
 
 export default function Tokens() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const canCreateToken = hasPermission(user, "tokens", "create");
   const [tickets, setTickets] = useState([]);
   const [resolvedTickets, setResolvedTickets] = useState([]);
   const [viewResolved, setViewResolved] = useState(false);
@@ -402,12 +406,24 @@ export default function Tokens() {
             {
               key: "studentName",
               label: "Student",
-              render: (r) => (
-                <div>
-                  <div className="font-medium text-slate-800">{r.studentName}</div>
-                  <div className="text-xs text-slate-400">{r.studentEmail}</div>
-                </div>
-              )
+              render: (r) => {
+                const canViewDetails = hasPermission(user, "tokens", "details");
+                return (
+                  <div>
+                    {canViewDetails && r.studentId ? (
+                      <button
+                        onClick={() => navigate(`/student/${r.studentId}?context=tokens`)}
+                        className="font-medium text-skillit hover:underline text-left"
+                      >
+                        {r.studentName}
+                      </button>
+                    ) : (
+                      <div className="font-medium text-slate-800">{r.studentName}</div>
+                    )}
+                    <div className="text-xs text-slate-400">{r.studentEmail}</div>
+                  </div>
+                );
+              }
             },
             {
               key: "subject",
@@ -492,7 +508,9 @@ export default function Tokens() {
                       <div className="relative">
                         <button
                           onClick={() => setAssignDropdownOpen(!assignDropdownOpen)}
-                          className="px-4 py-1.5 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold text-slate-600 bg-white flex items-center gap-1.5 transition-all shadow-sm"
+                          disabled={!canCreateToken}
+                          title={canCreateToken ? undefined : "Create access is disabled for this role"}
+                          className="px-4 py-1.5 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold text-slate-600 bg-white flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           assign <ChevronDown className="h-3 w-3" />
                         </button>
@@ -514,7 +532,9 @@ export default function Tokens() {
                       {/* Resolve button */}
                       <button
                         onClick={handleResolve}
-                        className="px-4 py-1.5 bg-skillit hover:bg-skillit-dark text-white rounded-lg text-xs font-semibold shadow-pop transition-all"
+                        disabled={!canCreateToken}
+                        title={canCreateToken ? undefined : "Create access is disabled for this role"}
+                        className="px-4 py-1.5 bg-skillit hover:bg-skillit-dark text-white rounded-lg text-xs font-semibold shadow-pop transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Resolve
                       </button>

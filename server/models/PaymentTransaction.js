@@ -17,8 +17,15 @@ const paymentTransactionSchema = new mongoose.Schema(
     },
     orderId: {
       type: String,
-      required: true,
+      required: false,
       unique: true,
+      sparse: true,
+      index: true,
+    },
+    razorpayPaymentLinkId: {
+      type: String,
+      unique: true,
+      sparse: true,
       index: true,
     },
     paymentId: {
@@ -40,7 +47,7 @@ const paymentTransactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["created", "captured", "failed", "refunded"],
+      enum: ["created", "captured", "failed", "refunded", "cancelled"],
       default: "created",
     },
     method: {

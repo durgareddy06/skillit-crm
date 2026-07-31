@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { userHasPermission, userHasActionPermission } from "../utils/permissions.js";
+import Student from "../models/Student.js";
 
 import {
   listStudents, studentSummary, getStudent, createStudent, generatePaymentLink, addPayment,
   punchOrder, enrollStudent, cancelStudent, misApprove, misCancel, dropStudent, editStudent,
-  transferStudent, listTransferTargets,
+  transferStudent, listTransferTargets, listAllUsers, getPaymentInvoice, getHierarchyFilters,
+  cancelPaymentLink,
 } from "../controllers/studentController.js";
 
 import { requestPasswordReset, resetPassword, verifyEmail } from "../controllers/emailController.js";
@@ -40,9 +42,40 @@ function requireStudentPermission(moduleKey, action) {
 // requireStudentPermission for any action that the spec lists under more
 // than one module (Generate Payment Link, Add Payment, Punch Order, ...) —
 // this is what fixes the "enabled in Manage Roles but still 403s" bug class.
+function getStudentContext(student) {
+  if (!student) return "student";
+  if (student.status === "Cancelled") return "cancelled";
+  if (student.status === "Enrolled") {
+    if (student.misStatus === "approved") return "enrolled";
+    return "mis-approval";
+  }
+  if (student.status === "Pending" && student.orderPunched) return "pending";
+  if (student.orderPunched) return "booked-orders";
+  if (student.paidAmount > 0) return "payments";
+  if (student.paymentLinkGenerated) return "payment-link";
+  return "student";
+}
+
 function requireActionPermission(actionKey) {
   return (req, res, next) => {
-    userHasActionPermission(req.user, actionKey)
+    const checkPermission = async () => {
+      let context = req.query.context || req.query.view || null;
+      if (!context && req.params.id) {
+        const student = await Student.findOne({ id: req.params.id });
+        if (student) {
+          if (req.body && (req.body.onboardingSubmitted !== undefined || req.body.onboardingComments !== undefined || req.body.onboardingDate !== undefined)) {
+            context = "onboarding";
+          } else if (req.body && (req.body.orientationCompleted !== undefined || req.body.orientationLink !== undefined || req.body.recordedLink !== undefined)) {
+            context = "orientation";
+          } else {
+            context = getStudentContext(student);
+          }
+        }
+      }
+      return await userHasActionPermission(req.user, actionKey, context);
+    };
+
+    checkPermission()
       .then((allowed) => {
         if (!allowed) {
           return res.status(403).json({ message: "You don't have permission to do that" });
@@ -60,7 +93,6 @@ const ALL_STUDENT_MODULE_KEYS = [
   "booked-orders",
   "pending",
   "enrolled",
-  "enrollments",
   "mis-approval",
   "approved",
   "cancelled",
@@ -95,9 +127,8 @@ function requireReadStudentPermission() {
         relevantModules.add("learners");
         relevantModules.add("orientation");
       }
-      if (view === "enrolled" || view === "enrollments") {
+      if (view === "enrolled") {
         relevantModules.add("enrolled");
-        relevantModules.add("enrollments");
         relevantModules.add("approved");
       }
       if (view === "pending") {
@@ -121,14 +152,44 @@ function requireReadStudentPermission() {
   };
 }
 
+function requireDetailStudentPermission() {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ message: "Not authenticated" });
+    if (normalizeStr(req.user.role) === "admin") return next();
+
+    let context = req.query.context || req.query.view || "student";
+    if (!ALL_STUDENT_MODULE_KEYS.includes(context) && context !== "tokens") {
+      context = "student";
+    }
+
+    Promise.all([
+      userHasPermission(req.user, context, "details"),
+      userHasPermission(req.user, context, "create"),
+      userHasPermission(req.user, context, "update"),
+    ])
+      .then(([allowedDetails, allowedCreate, allowedUpdate]) => {
+        if (allowedDetails || allowedCreate || allowedUpdate) {
+          return next();
+        }
+        return res.status(403).json({ message: "You don't have permission to do that" });
+      })
+      .catch(next);
+  };
+}
+
 router.get("/", requireReadStudentPermission(), listStudents);
 router.get("/summary", requireReadStudentPermission(), studentSummary);
-// Must be registered before "/:id" so "transfer-targets" isn't swallowed as
-// a student id.
+// Must be registered before "/:id" so static paths aren't swallowed as a student id.
 router.get("/transfer-targets", requireActionPermission("transfer-lead"), listTransferTargets);
-router.get("/:id", requireReadStudentPermission(), getStudent);
+// All authenticated users can query the full user list for the punch-order
+// "Demo Done By" dropdown — any staff member on the floor can run a demo.
+router.get("/all-users", listAllUsers);
+router.get("/hierarchy-filters", getHierarchyFilters);
+router.get("/:id", requireDetailStudentPermission(), getStudent);
+router.get("/:id/payments/:paymentIndex/invoice", requireReadStudentPermission(), getPaymentInvoice);
 router.post("/", requireActionPermission("create-student"), createStudent);
 router.post("/:id/payment-link", requireActionPermission("generate-payment-link"), generatePaymentLink);
+router.post("/:id/payment-link/:linkId/cancel", requireActionPermission("generate-payment-link"), cancelPaymentLink);
 router.post("/:id/payments", requireActionPermission("add-payment"), addPayment);
 router.post("/:id/punch-order", requireActionPermission("punch-order"), punchOrder);
 router.post("/:id/enroll", requireActionPermission("enroll-student"), enrollStudent);

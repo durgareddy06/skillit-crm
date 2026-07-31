@@ -8,8 +8,11 @@ import ActivityDrawer from "../components/ActivityDrawer";
 import { Field, Input, Textarea, fromDateInputValue, toDateInputValue, todayDateInputValue } from "../components/Field";
 import { listStudents, updateStudent } from "../api/students";
 import { buildSupportTableColumns, SupportActivityButton } from "../config/supportTableColumns.jsx";
+import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../lib/permissions";
 
 export default function Orientation() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [active, setActive] = useState(null);
@@ -39,7 +42,7 @@ export default function Orientation() {
         recordedLink: form.get("recordedLink"),
         internalRemarks: form.get("internalRemarks"),
         orientationCompleted: true,
-      });
+      }, "orientation");
       setActive(null);
       refresh();
       navigate("/learners");
@@ -53,7 +56,7 @@ export default function Orientation() {
       <Topbar title="Orientation" subtitle="Skillit Academy | 8639191169" />
       <DataTable
         columns={buildSupportTableColumns({
-          onNameClick: (row) => setActive(row),
+          onNameClick: hasPermission(user, "orientation", "details") ? (row) => setActive(row) : undefined,
           nameExtra: (row) => (
             <SupportActivityButton onClick={(e) => {
               e.stopPropagation();

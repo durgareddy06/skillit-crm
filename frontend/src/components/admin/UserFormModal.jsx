@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Modal from "../Modal";
 import Button from "../Button";
 import { Field, Input, Select, PhoneInput, ToggleSwitch, normalizePhone, toDateInputValue, fromDateInputValue } from "../Field";
-import { RotateCcw, Trash2 } from "lucide-react";
+import { RotateCcw, Trash2, Archive as ArchiveIcon } from "lucide-react";
 import { listRoles } from "../../api/admin";
 import { sortRoles } from "../../config/roles";
 
@@ -20,7 +20,7 @@ const emptyForm = {
   appAccess: false,
 };
 
-export default function UserFormModal({ open, onClose, onSave, onDelete, onResetPassword, onResetLoginAttempts, user, managers = [] }) {
+export default function UserFormModal({ open, onClose, onSave, onArchive, onResetPassword, onResetLoginAttempts, user, managers = [] }) {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [roles, setRoles] = useState([]);
@@ -114,8 +114,8 @@ export default function UserFormModal({ open, onClose, onSave, onDelete, onReset
                 >
                   {user.status === "Active" ? "Inactive" : "Active"}
                 </Button>
-                <Button variant="danger" onClick={() => onDelete?.(user)}>
-                  <Trash2 className="h-4 w-4" /> Delete
+                <Button variant="danger" onClick={() => onArchive?.(user)}>
+                  <ArchiveIcon className="h-4 w-4" /> Archive
                 </Button>
               </>
             )}

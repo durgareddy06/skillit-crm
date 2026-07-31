@@ -26,7 +26,7 @@ export function toDateInputValue(value = "") {
 
   const [, day, month, year] = match;
   const fullYear = year.length === 2 ? `20${year}` : year;
-  return `${fullYear}-${day.padStart(2, "0")}-${month.padStart(2, "0")}`;
+  return `${fullYear}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
 export function fromDateInputValue(value = "") {

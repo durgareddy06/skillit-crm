@@ -1,5 +1,7 @@
 import User from "../models/User.js";
 import Role from "../models/Role.js";
+import Team from "../models/Team.js";
+import Student from "../models/Student.js";
 import { normalizePhone } from "../utils/phone.js";
 import { getReportingManagerId } from "../utils/hierarchy.js";
 
@@ -48,7 +50,7 @@ async function withManagerName(doc) {
 }
 
 export async function listUsers(req, res) {
-  const users = await User.find()
+  const users = await User.find({ status: { $ne: "Archived" } })
     .sort({ createdAt: -1 })
     .select("salutation name email phone role roleId designation dateOfJoining department appAccess status loginAttempts createdBy updatedBy createdAt updatedAt")
     .lean();
@@ -145,7 +147,15 @@ export async function updateUser(req, res) {
   let pendingAssignment = null;
   if (req.body.roleId !== undefined) {
     pendingAssignment = await resolveRoleAssignment(req.body.roleId);
-    if (!pendingAssignment) return res.status(400).json({ message: "Selected role could not be found" });
+    if (!pendingAssignment) {
+      // Defensive healing: if roleId is stale/deleted but matches user's current role name
+      const fallbackRoleDoc = await Role.findOne({ name: user.role }).lean();
+      if (fallbackRoleDoc) {
+        pendingAssignment = { roleId: fallbackRoleDoc._id, role: fallbackRoleDoc.name, designation: fallbackRoleDoc.name };
+      } else {
+        return res.status(400).json({ message: "Selected role could not be found" });
+      }
+    }
   }
 
   const fields = [
@@ -184,9 +194,71 @@ export async function updateUser(req, res) {
 
 export async function deleteUser(req, res) {
   const { id } = req.params;
-  const user = await User.findByIdAndDelete(id);
+  const user = await User.findById(id);
   if (!user) return res.status(404).json({ message: "User not found" });
+
+  user.status = "Archived";
+  user.updatedBy = req.user?.name || "Admin";
+  await user.save();
+
+  // Clean up user from any team members array
+  await Team.updateMany(
+    { members: user._id },
+    { $pull: { members: user._id } }
+  );
+
   res.json({ ok: true });
+}
+
+export async function restoreUser(req, res) {
+  const { id } = req.params;
+  const user = await User.findById(id);
+  if (!user) return res.status(404).json({ message: "User not found" });
+
+  user.status = "Active";
+  user.updatedBy = req.user?.name || "Admin";
+  await user.save();
+  res.json({ ok: true });
+}
+
+export async function listArchivedUsers(req, res) {
+  const users = await User.find({ status: "Archived" })
+    .sort({ createdAt: -1 })
+    .select("salutation name email phone role roleId designation dateOfJoining department appAccess status loginAttempts createdBy updatedBy createdAt updatedAt")
+    .lean();
+
+  const shaped = await Promise.all(
+    users.map(async (user) => {
+      const reportingManagerId = await getReportingManagerId(user._id);
+      let reportingManagerName = "";
+      if (reportingManagerId) {
+        const mgr = await User.findById(reportingManagerId).select("name").lean();
+        reportingManagerName = mgr?.name || "";
+      }
+      return {
+        id: user._id.toString(),
+        salutation: user.salutation,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        roleId: user.roleId ? user.roleId.toString() : null,
+        designation: user.designation,
+        reportingManager: reportingManagerId,
+        reportingManagerName,
+        dateOfJoining: user.dateOfJoining,
+        department: user.department,
+        appAccess: user.appAccess,
+        status: user.status,
+        loginAttempts: user.loginAttempts,
+        createdBy: user.createdBy,
+        updatedBy: user.updatedBy,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      };
+    })
+  );
+  res.json({ users: shaped });
 }
 
 export async function resetPassword(req, res) {
@@ -209,5 +281,130 @@ export async function resetLoginAttempts(req, res) {
   user.loginAttempts = 0;
   user.updatedBy = req.user?.name || "Admin";
   await user.save();
-  res.json({ user: await withManagerName(user) });
+  res.json({ ok: true });
+}
+
+export async function getUserHistoricalData(req, res) {
+  const { id } = req.params;
+  const user = await User.findById(id).lean();
+  if (!user) return res.status(404).json({ message: "User not found" });
+
+  // Resolve Team Name
+  const team = await Team.findOne({
+    $or: [{ manager: user._id }, { members: user._id }]
+  }).select("name").lean();
+  const teamName = team ? team.name : "No Team";
+
+  // Resolve Reporting Manager Name
+  const reportingManagerId = await getReportingManagerId(user._id);
+  let reportingManagerName = "No Manager";
+  if (reportingManagerId) {
+    const mgr = await User.findById(reportingManagerId).select("name").lean();
+    reportingManagerName = mgr?.name || "No Manager";
+  }
+
+  const userId = user._id;
+
+  // 1. Students Created
+  const studentsCreatedRaw = await Student.find({ createdById: userId })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const studentsCreated = studentsCreatedRaw.map(s => ({
+    id: s.id,
+    customerName: s.customerName,
+    email: s.email,
+    uniqueId: s.uniqueId || s.id,
+    status: s.status,
+    createdAt: s.createdAt,
+  }));
+
+  // 2. Payments
+  const studentsWithPayments = await Student.find({
+    createdById: userId,
+    $or: [
+      { "payments.0": { $exists: true } },
+      { paidAmount: { $gt: 0 } }
+    ]
+  }).lean();
+
+  const payments = studentsWithPayments.flatMap(student => {
+    const studentPayments = Array.isArray(student.payments) && student.payments.length > 0
+      ? student.payments
+      : student.paidAmount > 0
+        ? [{
+          paidDate: student.date || student.createdAt || "",
+          amount: student.paidAmount,
+          mode: student.paymentMode || "Payment Link",
+          product: "Jobo Pay",
+          refId: "",
+          statementId: "",
+        }]
+        : [];
+
+    return studentPayments.map((p, idx) => ({
+      id: `${student.id}-payment-${idx}`,
+      studentId: student.id,
+      studentName: student.customerName,
+      studentUniqueId: student.uniqueId || student.id,
+      paidDate: p.paidDate || "",
+      amount: p.amount || 0,
+      mode: p.mode || "",
+      product: p.product || "",
+      refId: p.refId || "",
+      statementId: p.statementId || "",
+    }));
+  });
+
+  // 3. Booked Orders
+  const bookedOrdersRaw = await Student.find({ createdById: userId, orderPunched: true })
+    .sort({ orderPunchedAt: -1 })
+    .lean();
+
+  const bookedOrders = bookedOrdersRaw.map(s => ({
+    id: s.id,
+    customerName: s.customerName,
+    email: s.email,
+    uniqueId: s.uniqueId || s.id,
+    amount: s.saleValue,
+    orderPunchedAt: s.orderPunchedAt || s.createdAt || "",
+  }));
+
+  // 4. Enrollments
+  const enrollmentsRaw = await Student.find({
+    createdById: userId,
+    status: "Enrolled",
+    misStatus: "approved"
+  })
+    .sort({ enrolledAt: -1 })
+    .lean();
+
+  const enrollments = enrollmentsRaw.map(s => ({
+    id: s.id,
+    customerName: s.customerName,
+    email: s.email,
+    uniqueId: s.uniqueId || s.id,
+    batch: s.batch,
+    program: s.program,
+    enrolledAt: s.enrolledAt || s.createdAt || "",
+  }));
+
+  res.json({
+    user: {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      designation: user.designation,
+      status: user.status,
+      team: teamName,
+      reportingManager: reportingManagerName,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    },
+    studentsCreated,
+    payments,
+    bookedOrders,
+    enrollments,
+  });
 }

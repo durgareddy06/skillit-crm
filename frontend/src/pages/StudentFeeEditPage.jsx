@@ -25,14 +25,14 @@ export default function StudentFeeEditPage() {
 
   const refresh = useCallback(() => {
     setLoading(true);
-    getStudent(id)
+    getStudent(id, context || "payments")
       .then((data) => {
         setStudent(data);
         setCourseFee(String(data.saleValue ?? 0));
         setDiscount(String(data.discount ?? 0));
       })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, context]);
 
   useEffect(() => {
     refresh();
@@ -89,7 +89,7 @@ export default function StudentFeeEditPage() {
         saleValue: feeAmount,
         discount: discountAmount,
         outstanding,
-      });
+      }, context || "payments");
       navigate(backTarget);
     } finally {
       setSaving(false);

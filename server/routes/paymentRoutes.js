@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { createOrder, verifyPayment, handleWebhook, confirmPayment, refundPayment } from "../controllers/paymentController.js";
+import { createOrder, verifyPayment, handleWebhook, confirmPayment, refundPayment, verifyPaymentLink } from "../controllers/paymentController.js";
 
 const router = Router();
 
@@ -14,6 +14,7 @@ router.post("/webhook", handleWebhook);
 // ==============================================================================
 router.post("/order", requireAuth, createOrder);
 router.post("/verify", requireAuth, verifyPayment);
+router.post("/verify-link", requireAuth, verifyPaymentLink);
 router.post("/confirm", requireAuth, confirmPayment);
 router.post("/refund", requireAuth, refundPayment);
 

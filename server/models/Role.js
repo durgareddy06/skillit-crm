@@ -12,6 +12,7 @@ const permissionRowSchema = new mongoose.Schema(
       read: { type: Boolean, default: false },
       update: { type: Boolean, default: false },
       delete: { type: Boolean, default: false },
+      details: { type: Boolean, default: false },
     },
     administrative: {
       readAll: { type: Boolean, default: false },

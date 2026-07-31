@@ -5,7 +5,7 @@ import { Field, Input, ToggleSwitch } from "../Field";
 import { buildRolePermissionRows } from "../../lib/roleVisibility";
 import { listModules } from "../../api/admin";
 
-const BASIC = [["create", "Create"], ["read", "Read"], ["update", "Update"], ["delete", "Delete"]];
+const BASIC = [["create", "Create"], ["read", "Read"], ["update", "Update"], ["delete", "Delete"], ["details", "Details"]];
 const ADMIN = [["readAll", "Read All"], ["updateAll", "Update All"], ["deleteAll", "Delete All"]];
 const SPECIAL = [["email", "Email"], ["bulkEmail", "Bulk Email"], ["bulkUpdate", "Bulk Update"], ["bulkDelete", "Bulk Delete"]];
 
@@ -159,7 +159,7 @@ export default function RolePermissionsEditor({ role, onCancel, onSave }) {
           <thead>
             <tr className="bg-slate-100/80 text-slate-600">
               <th rowSpan={2} className="px-4 py-2 text-left font-semibold align-bottom">Name</th>
-              <th colSpan={4} className="px-4 py-2 text-center font-semibold border-l border-slate-200">Basic Access</th>
+              <th colSpan={5} className="px-4 py-2 text-center font-semibold border-l border-slate-200">Basic Access</th>
               <th colSpan={3} className="px-4 py-2 text-center font-semibold border-l border-slate-200">Administrative Access</th>
               <th colSpan={4} className="px-4 py-2 text-center font-semibold border-l border-slate-200">Special Access</th>
             </tr>

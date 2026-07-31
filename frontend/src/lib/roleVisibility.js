@@ -9,7 +9,7 @@ function blankRow(mod) {
     key: mod.key,
     label: mod.label,
     parentKey: mod.parentKey || null,
-    basic: { create: false, read: false, update: false, delete: false },
+    basic: { create: false, read: false, update: false, delete: false, details: false },
     administrative: { readAll: false, updateAll: false, deleteAll: false },
     special: { email: false, bulkEmail: false, bulkUpdate: false, bulkDelete: false },
   };

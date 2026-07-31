@@ -30,7 +30,7 @@ export async function requireAuth(req, res, next) {
 
     if (!user) return res.status(401).json({ message: "Account no longer exists" });
     if (user.status !== "Active") {
-      return res.status(403).json({ message: "This account is inactive" });
+      return res.status(403).json({ message: "Your account has been disabled. Please contact your administrator." });
     }
 
     // req.user is now always the LATEST row from the database, never the

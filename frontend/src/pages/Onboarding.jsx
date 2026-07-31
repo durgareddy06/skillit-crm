@@ -4,24 +4,31 @@ import Topbar from "../components/Topbar";
 import DataTable from "../components/DataTable";
 import { listStudents } from "../api/students";
 import { buildSupportTableColumns } from "../config/supportTableColumns.jsx";
+import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../lib/permissions";
 
 export default function Onboarding() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
 
   useEffect(() => {
-    listStudents("approved")
+    listStudents("onboarding")
       .then((data) => setRows(Array.isArray(data) ? data : []))
       .catch(() => setRows([]));
   }, []);
+
+  const canViewDetails = hasPermission(user, "onboarding", "details");
 
   return (
     <div>
       <Topbar title="Onboarding" subtitle="Skillit Academy | 8639191169" />
       <DataTable
-        columns={buildSupportTableColumns({ navigate, detailPath: "/onboarding" })}
+        columns={buildSupportTableColumns({
+          onNameClick: canViewDetails ? (row) => navigate(`/onboarding/${row.id}`) : undefined,
+        })}
         rows={rows}
-        onRowClick={(row) => navigate(`/onboarding/${row.id}`)}
+        onRowClick={canViewDetails ? (row) => navigate(`/onboarding/${row.id}`) : undefined}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Team from "../models/Team.js";
 import User from "../models/User.js";
-import { isManagerDesignation, isSdeDesignation } from "../utils/userHierarchy.js";
+import { isSdeDesignation } from "../utils/userHierarchy.js";
 
 async function shapeTeam(doc) {
   let managerName = "";
@@ -11,6 +11,14 @@ async function shapeTeam(doc) {
     const manager = await User.findById(doc.manager).select("name").lean();
     managerName = manager?.name || "";
   }
+
+  const membersRaw = Array.isArray(doc.members) ? doc.members : [];
+  const existingUsers = await User.find({
+    _id: { $in: membersRaw },
+    status: { $ne: "Archived" },
+  }).select("_id").lean();
+  const validMemberIds = existingUsers.map((u) => u._id.toString());
+
   return {
     id: doc._id.toString(),
     name: doc.name,
@@ -18,8 +26,8 @@ async function shapeTeam(doc) {
     status: doc.status,
     manager: doc.manager?._id ? doc.manager._id : doc.manager || null,
     managerName,
-    userCount: Array.isArray(doc.members) ? doc.members.length : 0,
-    members: doc.members || [],
+    userCount: validMemberIds.length,
+    members: validMemberIds,
     createdBy: doc.createdBy,
     updatedBy: doc.updatedBy,
     createdAt: doc.createdAt,
@@ -34,9 +42,9 @@ async function findMemberConflicts(teamId, userIds) {
   const ids = uniqueIds(userIds);
   if (ids.length === 0) return [];
 
-  const selectedUsers = await User.find({ _id: { $in: ids } }).select("name designation").lean();
+  const selectedUsers = await User.find({ _id: { $in: ids } }).select("name designation role").lean();
   const singleTeamIds = selectedUsers
-    .filter((user) => isSdeDesignation(user.designation || user.role) || isManagerDesignation(user.designation || user.role))
+    .filter((user) => isSdeDesignation(user.designation || user.role))
     .map((user) => toId(user._id));
   const singleTeamIdSet = new Set(singleTeamIds);
 
@@ -122,7 +130,10 @@ export async function assignUsers(req, res) {
   const team = await Team.findById(id);
   if (!team) return res.status(404).json({ message: "Team not found" });
 
-  const nextMembers = uniqueIds(userIds);
+  let nextMembers = uniqueIds(userIds);
+  if (team.manager) {
+    nextMembers = nextMembers.filter((mId) => String(mId) !== String(team.manager));
+  }
   const conflicts = await findMemberConflicts(team._id, nextMembers);
   if (conflicts.length > 0) {
     return res.status(409).json({
@@ -139,7 +150,59 @@ export async function assignUsers(req, res) {
 
 export async function deleteTeam(req, res) {
   const { id } = req.params;
-  const team = await Team.findByIdAndDelete(id);
+  const team = await Team.findById(id);
   if (!team) return res.status(404).json({ message: "Team not found" });
+
+  const validMemberCount = await User.countDocuments({
+    _id: { $in: team.members || [] },
+    status: { $ne: "Archived" },
+  });
+  if (validMemberCount > 0) {
+    return res.status(400).json({
+      message: "This team cannot be deleted because it still has assigned members.",
+    });
+  }
+
+  await Team.findByIdAndDelete(id);
   res.json({ ok: true });
+}
+
+export async function transferTeamMembers(req, res) {
+  const { id } = req.params;
+  const { toTeamId } = req.body || {};
+
+  const fromTeam = await Team.findById(id);
+  if (!fromTeam) return res.status(404).json({ message: "Source team not found" });
+
+  const toTeam = await Team.findById(toTeamId);
+  if (!toTeam) return res.status(404).json({ message: "Destination team not found" });
+
+  if (String(id) === String(toTeamId)) {
+    return res.status(400).json({ message: "Source and destination teams must be different" });
+  }
+
+  const memberIds = fromTeam.members || [];
+  if (memberIds.length > 0) {
+    // 1. Add members to the destination team
+    const existingMembers = new Set((toTeam.members || []).map((m) => String(m)));
+    for (const mId of memberIds) {
+      existingMembers.add(String(mId));
+    }
+    toTeam.members = Array.from(existingMembers).map((m) => new mongoose.Types.ObjectId(m));
+    toTeam.updatedBy = req.user?.name || "Admin";
+    await toTeam.save();
+
+    // 2. Empty the source team
+    fromTeam.members = [];
+    fromTeam.updatedBy = req.user?.name || "Admin";
+    await fromTeam.save();
+
+    // 3. Update the department string for all transferred users to the destination team's name
+    await User.updateMany(
+      { _id: { $in: memberIds } },
+      { $set: { department: toTeam.name } }
+    );
+  }
+
+  res.json({ ok: true, message: `Successfully transferred ${memberIds.length} member(s)` });
 }

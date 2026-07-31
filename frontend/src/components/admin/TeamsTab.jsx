@@ -1,11 +1,19 @@
 import React, { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import DataTable from "../DataTable";
 import TeamFormModal from "./TeamFormModal";
+import Modal from "../Modal";
+import Button from "../Button";
+import { Field, Select } from "../Field";
 import * as adminApi from "../../api/admin";
 
 const TeamsTab = forwardRef(function TeamsTab({ teams, users, loading, search, onRefresh }, ref) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState(null);
+
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [transferringTeam, setTransferringTeam] = useState(null);
+  const [destTeamId, setDestTeamId] = useState("");
+  const [transferLoading, setTransferLoading] = useState(false);
 
   useImperativeHandle(ref, () => ({ openCreate: () => { setEditingTeam(null); setModalOpen(true); } }));
 
@@ -37,9 +45,37 @@ const TeamsTab = forwardRef(function TeamsTab({ teams, users, loading, search, o
   };
 
   const handleDelete = async (t) => {
+    if (t.userCount > 0) {
+      setTransferringTeam(t);
+      const otherTeams = teams.filter((team) => team.id !== t.id);
+      setDestTeamId(otherTeams[0]?.id || "");
+      setTransferModalOpen(true);
+      return;
+    }
+
     if (!window.confirm(`Delete team "${t.name}"?`)) return;
-    await adminApi.deleteTeam(t.id);
-    onRefresh();
+    try {
+      await adminApi.deleteTeam(t.id);
+      onRefresh();
+    } catch (error) {
+      window.alert(error?.response?.data?.message || "Unable to delete team.");
+    }
+  };
+
+  const handleTransferAndConfirm = async () => {
+    if (!destTeamId) return;
+    setTransferLoading(true);
+    try {
+      await adminApi.transferTeamMembers(transferringTeam.id, destTeamId);
+      await adminApi.deleteTeam(transferringTeam.id);
+      setTransferModalOpen(false);
+      setTransferringTeam(null);
+      onRefresh();
+    } catch (error) {
+      window.alert(error?.response?.data?.message || "Unable to transfer members and delete team.");
+    } finally {
+      setTransferLoading(false);
+    }
   };
 
   const columns = [
@@ -83,6 +119,55 @@ const TeamsTab = forwardRef(function TeamsTab({ teams, users, loading, search, o
         allUsers={users}
         teams={teams}
       />
+
+      <Modal
+        open={transferModalOpen}
+        onClose={() => !transferLoading && setTransferModalOpen(false)}
+        title="Transfer Members"
+      >
+        <div className="space-y-5">
+          <p className="text-sm text-slate-600 leading-relaxed">
+            This team cannot be deleted because it still has assigned members. Please transfer all team members to another team before deleting this team.
+          </p>
+
+          <Field label="Destination Team" required>
+            <Select
+              value={destTeamId}
+              onChange={(e) => setDestTeamId(e.target.value)}
+              disabled={transferLoading}
+            >
+              <option value="" disabled>Select a team...</option>
+              {teams
+                .filter((team) => team.id !== transferringTeam?.id)
+                .map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name} ({team.userCount || 0} members)
+                  </option>
+                ))}
+            </Select>
+          </Field>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setTransferModalOpen(false)}
+              disabled={transferLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={handleTransferAndConfirm}
+              loading={transferLoading}
+              disabled={!destTeamId}
+            >
+              Transfer Members
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 });

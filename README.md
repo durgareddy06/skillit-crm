@@ -51,17 +51,13 @@ cd frontend        # from the project root
 npm install
 npm run dev
 ```
-Open the printed `http://localhost:5173`.
+Open the printed `http://localhost:5174`.
 
 ## 4. Log in
 
 All demo accounts use the password **`skillit123`**:
 
-| Phone        | Role    |
-|--------------|---------|
-| 8639555275   | Sales   |
-| 9000000001   | MIS     |
-| 9000000002   | Support |
+All accounts where created by Admin , default password is "skillit123"
 
 Login now does real JWT authentication: `POST /api/auth/login` returns a
 signed token, which is stored in `localStorage` and sent as

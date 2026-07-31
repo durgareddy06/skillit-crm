@@ -13,6 +13,8 @@ import {
   Save,
   Trash2,
   Zap,
+  FileText,
+  Mail,
 } from "lucide-react";
 import Topbar from "../components/Topbar";
 import DataTable from "../components/DataTable";
@@ -20,11 +22,12 @@ import FilterBar from "../components/FilterBar";
 import Modal from "../components/Modal";
 import Button from "../components/Button";
 import { Field, Input, PhoneInput, Select, formatPhoneDisplay, todayDateInputValue } from "../components/Field";
-import { listStudents, dropStudent, generatePaymentLink, updateStudent } from "../api/students";
+import { listStudents, dropStudent, generatePaymentLink, updateStudent, getPaymentInvoice, getHierarchyFilters, cancelPaymentLink } from "../api/students";
 import { useAuth } from "../context/AuthContext";
 import { canUsePermission, hasActionPermission } from "../lib/permissions";
 import { canTransferLead } from "../lib/userHierarchy";
 import TransferLeadModal from "../components/TransferLeadModal";
+import PaymentDetailsDrawer from "../components/PaymentDetailsDrawer";
 
 const money = (n) => `\u20B9${Number(n || 0).toLocaleString("en-IN")}`;
 const PAGE_SIZE = 25;
@@ -109,21 +112,23 @@ function getPaymentLinkTone(status) {
   }
 }
 
-function useStudentList(view) {
+function useStudentList(view, hierarchyParams = {}) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
+  const paramsKey = JSON.stringify(hierarchyParams);
+
   const refresh = useCallback(() => {
     setLoading(true);
-    listStudents(view)
+    listStudents(view, hierarchyParams)
       .then((data) => {
         setRows(data);
         setErr("");
       })
       .catch(() => setErr("Couldn't reach the backend. Is `npm run dev` running inside /server?"))
       .finally(() => setLoading(false));
-  }, [view]);
+  }, [view, paramsKey]);
 
   useEffect(() => {
     refresh();
@@ -150,11 +155,236 @@ function ExpandField({ label, children }) {
   );
 }
 
+
+function getModuleFilters(view, rows) {
+  const getOptions = (field) => [...new Set(rows.map(r => r[field]).filter(Boolean))].sort();
+
+  const courses = getOptions("course");
+  const batches = getOptions("batch");
+  const sdes = getOptions("sdeName");
+  const demoDoneBys = getOptions("demoDoneBy");
+  const intakeCycles = [...new Set(rows.flatMap(r => [r.cycle, r.month]).filter(Boolean))].sort();
+
+  if (!view || view === "student") {
+    return [
+      { key: "studentId", label: "Student ID", type: "text" },
+      { key: "studentName", label: "Student Name", type: "text" },
+      { key: "course", label: "Course", type: "select", options: courses },
+      { key: "batch", label: "Batch", type: "select", options: batches },
+      { key: "intakeCycle", label: "Intake/Cycle", type: "select", options: intakeCycles },
+      { key: "studentStatus", label: "Student Status", type: "select", options: ["Active", "Pending", "Enrolled", "Cancelled", "Dropped"] },
+      { key: "counsellorSde", label: "Counsellor/SDE", type: "select", options: sdes },
+    ];
+  }
+
+  switch (view) {
+    case "payment-link":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "paymentStatus", label: "Payment Status", type: "select", options: ["Not Generated", "Pending", "Partial", "Paid"] },
+        { key: "paymentMode", label: "Payment Mode", type: "select", options: ["Payment Link", "Cash", "Bank Transfer", "UPI", "Cheque", "EMI"] },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+      ];
+    case "payments":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "paymentStatus", label: "Payment Status", type: "select", options: ["Not Generated", "Pending", "Partial", "Paid"] },
+        { key: "paymentMode", label: "Payment Mode", type: "select", options: ["Payment Link", "Cash", "Bank Transfer", "UPI", "Cheque", "EMI"] },
+        { key: "transactionId", label: "Transaction ID", type: "text" },
+        { key: "paymentDate", label: "Payment Date", type: "text" },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+      ];
+    case "booked-orders":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "intakeCycle", label: "Intake/Cycle", type: "select", options: intakeCycles },
+        { key: "orderStatus", label: "Order Status", type: "select", options: ["Active", "Pending", "Enrolled", "Cancelled", "Dropped"] },
+        { key: "bookingDate", label: "Booking Date", type: "text" },
+      ];
+    case "pending":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "pendingReason", label: "Pending Reason", type: "text" },
+        { key: "demoDoneBy", label: "Demo Done By", type: "select", options: demoDoneBys },
+      ];
+    case "enrolled":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "enrollmentDate", label: "Enrollment Date", type: "text" },
+        { key: "intakeCycle", label: "Intake/Cycle", type: "select", options: intakeCycles },
+      ];
+    case "mis-approval":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "misStatus", label: "MIS Status", type: "select", options: ["approved", "pending"] },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "approvalDate", label: "Approval Date", type: "text" },
+      ];
+    case "approved":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "approvalStatus", label: "Approval Status", type: "select", options: ["approved", "pending"] },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "approvedDate", label: "Approved Date", type: "text" },
+      ];
+    case "cancelled":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "cancellationDate", label: "Cancellation Date", type: "text" },
+      ];
+    case "onboarding":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "verificationStatus", label: "Verification Status", type: "select", options: ["Verified", "Unverified"] },
+        { key: "onboardingStatus", label: "Onboarding Status", type: "select", options: ["Submitted", "Pending"] },
+      ];
+    case "orientation":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "orientationDate", label: "Orientation Date", type: "text" },
+        { key: "orientationStatus", label: "Orientation Status", type: "select", options: ["Completed", "Pending"] },
+      ];
+    case "learners":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "learnerStatus", label: "Learner Status", type: "select", options: ["Active", "Pending", "Enrolled", "Cancelled", "Dropped"] },
+      ];
+    case "tokens":
+      return [
+        { key: "studentName", label: "Student Name", type: "text" },
+        { key: "tokenStatus", label: "Token Status", type: "select", options: ["Active", "Pending", "Enrolled", "Cancelled", "Dropped"] },
+        { key: "course", label: "Course", type: "select", options: courses },
+        { key: "batch", label: "Batch", type: "select", options: batches },
+        { key: "tokenDate", label: "Token Date", type: "text" },
+      ];
+    default:
+      return [];
+  }
+}
+
+const normalizeDesignation = (v = "") => String(v).trim().toLowerCase().replace(/\s+/g, "");
+const isSde = (v) => normalizeDesignation(v) === "sde";
+const isManager = (v) => normalizeDesignation(v) === "manager";
+const isSrManager = (v) => normalizeDesignation(v) === "sr.manager" || normalizeDesignation(v) === "srmanager";
+const isAdminRole = (v) => normalizeDesignation(v) === "admin";
+
 export default function StudentListPage({ title, subtitle = "Skillit Academy | 8639191169", view, emptyText }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { rows, loading, err, refresh } = useStudentList(view);
+
+  const [hierarchyData, setHierarchyData] = useState({ levels: [], users: [], seniorManagers: [], managers: [], sdes: [] });
+  const [selections, setSelections] = useState({});
+
+  useEffect(() => {
+    getHierarchyFilters()
+      .then(setHierarchyData)
+      .catch((err) => console.error("Failed to load hierarchy filters", err));
+  }, []);
+
+  // Reset hierarchy filters when the view/module changes
+  useEffect(() => {
+    setSelections({});
+  }, [view]);
+
+  // Designations that should NOT appear as hierarchy filter dropdowns
+  const EXCLUDED_FILTER_LEVELS = useMemo(() => new Set([
+    "misexecutive",
+    "customersupportexecutive",
+    "customersupport",
+    "relationshipmanager",
+    "admin",
+  ]), []);
+
+  // Resolve visible levels below the current user's role designation
+  const visibleLevels = useMemo(() => {
+    const levels = hierarchyData.levels || [];
+    const normalize = (v) => String(v).trim().toLowerCase().replace(/[\s._-]+/g, "");
+
+    // Filter out designations not relevant to the sales hierarchy filter bar
+    const filteredLevels = levels.filter((lvl) => !EXCLUDED_FILTER_LEVELS.has(normalize(lvl)));
+
+    if (isAdminRole(user.role)) return filteredLevels;
+
+    const userDes = normalize(user.designation || user.role || "");
+    const userLvlIdx = filteredLevels.findIndex(lvl => normalize(lvl) === userDes);
+    if (userLvlIdx === -1) return [];
+    return filteredLevels.slice(userLvlIdx + 1);
+  }, [hierarchyData.levels, user, EXCLUDED_FILTER_LEVELS]);
+
+  const hierarchyParams = useMemo(() => {
+    const params = {};
+    let activeSelection = "";
+    let activeDes = "";
+
+    for (let i = visibleLevels.length - 1; i >= 0; i--) {
+      const lvl = visibleLevels[i];
+      if (selections[lvl]) {
+        activeSelection = selections[lvl];
+        activeDes = lvl.toLowerCase().replace(/[\s._-]+/g, "");
+        break;
+      }
+    }
+
+    if (activeSelection) {
+      params.hierarchyUserId = activeSelection;
+      
+      // Preserve backward compatibility params
+      if (activeDes === "sde") params.sdeId = activeSelection;
+      else if (activeDes === "manager") params.managerId = activeSelection;
+      else if (activeDes === "seniormanager" || activeDes === "srmanager" || activeDes === "sr.manager") {
+        params.seniorManagerId = activeSelection;
+      }
+    }
+    return params;
+  }, [selections, visibleLevels]);
+
+  const { rows, loading, err, refresh } = useStudentList(view, hierarchyParams);
+
+  const handleDownloadReceipt = async (payment) => {
+    if (!payment) return;
+    try {
+      const response = await getPaymentInvoice(payment.studentId, payment.paymentIndex ?? 0);
+      const contentDisposition = response.headers?.["content-disposition"] || "";
+      let filename = `Receipt_${payment.uniqueId || payment.studentId}.pdf`;
+      const matches = contentDisposition.match(/filename="?([^";]+)"?/);
+      if (matches && matches[1]) {
+        filename = matches[1];
+      }
+
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to download receipt:", err);
+      alert("Failed to download receipt");
+    }
+  };
+
   const [query, setQuery] = useState("");
   const [filterValues, setFilterValues] = useState({});
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
@@ -162,7 +392,6 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
   const [editDraft, setEditDraft] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showSearchMenu, setShowSearchMenu] = useState(false);
   const [showDateMenu, setShowDateMenu] = useState(false);
   const [showPaymentLink, setShowPaymentLink] = useState(false);
   const [paymentLinkAmount, setPaymentLinkAmount] = useState("");
@@ -174,6 +403,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
   const [busy, setBusy] = useState(false);
   const [showToolbarActions, setShowToolbarActions] = useState(false);
   const [showDownloadsMenu, setShowDownloadsMenu] = useState(false);
+  const [selectedDrawerPayment, setSelectedDrawerPayment] = useState(null);
 
   const isStudentModule = !view;
   const isPaymentLinkModule = view === "payment-link";
@@ -227,6 +457,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
         ...payment,
         id: `${student.id}-payment-${index}`,
         studentId: student.id,
+        paymentIndex: index,
         paymentDate: payment.paidDate || payment.paymentDate || "",
         amount: Number(payment.amount) || 0,
         product: payment.product || "",
@@ -245,20 +476,24 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
     return `/student/${row.id}`;
   }, [isPaymentLinkModule, isPaymentsModule, view]);
 
-  const courses = useMemo(() => [...new Set(displayRows.map((s) => s.course).filter(Boolean))], [displayRows]);
-  const programs = useMemo(() => [...new Set(displayRows.map((s) => s.program).filter(Boolean))], [displayRows]);
-  const batches = useMemo(() => [...new Set(displayRows.map((s) => s.batch).filter(Boolean))], [displayRows]);
-  const reportingManagers = useMemo(() => [...new Set(displayRows.map((s) => s.reportedTo).filter(Boolean))], [displayRows]);
-
   const filtered = useMemo(() => {
     const search = deferredQuery.trim().toLowerCase();
-    const dateField = isPaymentsModule ? "paymentDate" : isPaymentLinkModule ? "paymentLinkCreatedAt" : "date";
+    let dateField = "date";
+    if (view === "payments") dateField = "paymentDate";
+    else if (view === "payment-link") dateField = "paymentLinkCreatedAt";
+    else if (view === "booked-orders") dateField = "orderPunchedAt";
+    else if (view === "enrolled") dateField = "enrolledAt";
+    else if (view === "mis-approval" || view === "approved") dateField = "misApprovedAt";
+    else if (view === "cancelled") dateField = "cancelledAt";
+    else if (view === "onboarding") dateField = "onboardingSubmittedAt";
+    else if (view === "orientation") dateField = "orientationCompletedAt";
 
     return displayRows.filter((s) => {
       if (search) {
         const haystack = [
           s.customerName,
           s.uniqueId,
+          s.id,
           s.email,
           s.contactNumber,
           s.altContactNumber,
@@ -283,13 +518,93 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
         if (!haystack.includes(search)) return false;
       }
 
+      // Student ID
+      if (filterValues.studentId && !String(s.id || s.uniqueId || "").toLowerCase().includes(filterValues.studentId.toLowerCase())) {
+        return false;
+      }
+      // Student Name
+      if (filterValues.studentName && !String(s.customerName || "").toLowerCase().includes(filterValues.studentName.toLowerCase())) {
+        return false;
+      }
+      // Course
       if (filterValues.course && s.course !== filterValues.course) return false;
-      if (filterValues.program && s.program !== filterValues.program) return false;
+      // Batch
       if (filterValues.batch && s.batch !== filterValues.batch) return false;
-      if (filterValues.createdBy && !(s.createdBy || "").toLowerCase().includes(filterValues.createdBy.toLowerCase())) return false;
+      // Intake/Cycle
+      if (filterValues.intakeCycle && s.cycle !== Number(filterValues.intakeCycle) && s.month !== filterValues.intakeCycle) return false;
+      // Student Status
+      if (filterValues.studentStatus && s.status !== filterValues.studentStatus) return false;
+      // Counsellor/SDE
+      if (filterValues.counsellorSde && s.sdeName !== filterValues.counsellorSde && s.createdBy !== filterValues.counsellorSde) return false;
+      // Payment Status
       if (filterValues.paymentStatus && s.paymentLinkStatus !== filterValues.paymentStatus) return false;
-      if (filterValues.status && s.status !== filterValues.status) return false;
-      if (filterValues.reportedTo && s.reportedTo !== filterValues.reportedTo) return false;
+      // Payment Mode
+      if (filterValues.paymentMode && s.paymentMode !== filterValues.paymentMode && s.mode !== filterValues.paymentMode) return false;
+      // Transaction ID
+      if (filterValues.transactionId && !String(s.refId || s.statementId || "").toLowerCase().includes(filterValues.transactionId.toLowerCase())) {
+        return false;
+      }
+      // Payment Date
+      if (filterValues.paymentDate && !String(s.paidDate || s.paymentDate || s.date || "").toLowerCase().includes(filterValues.paymentDate.toLowerCase())) {
+        return false;
+      }
+      // Order Status
+      if (filterValues.orderStatus && s.status !== filterValues.orderStatus) return false;
+      // Booking Date
+      if (filterValues.bookingDate && !String(s.orderPunchedAt || s.date || "").toLowerCase().includes(filterValues.bookingDate.toLowerCase())) {
+        return false;
+      }
+      // Pending Reason
+      if (filterValues.pendingReason && !String(s.internalRemarks || "").toLowerCase().includes(filterValues.pendingReason.toLowerCase())) {
+        return false;
+      }
+      // Demo Done By
+      if (filterValues.demoDoneBy && s.demoDoneBy !== filterValues.demoDoneBy) return false;
+      // Enrollment Date
+      if (filterValues.enrollmentDate && !String(s.enrolledAt || s.date || "").toLowerCase().includes(filterValues.enrollmentDate.toLowerCase())) {
+        return false;
+      }
+      // MIS Status
+      if (filterValues.misStatus && s.misStatus !== filterValues.misStatus) return false;
+      // Approval Date
+      if (filterValues.approvalDate && !String(s.misApprovedAt || s.date || "").toLowerCase().includes(filterValues.approvalDate.toLowerCase())) {
+        return false;
+      }
+      // Approval Status / Approved Date
+      if (filterValues.approvalStatus && s.misStatus !== filterValues.approvalStatus) return false;
+      if (filterValues.approvedDate && !String(s.misApprovedAt || s.date || "").toLowerCase().includes(filterValues.approvedDate.toLowerCase())) {
+        return false;
+      }
+      // Cancellation Date
+      if (filterValues.cancellationDate && !String(s.cancelledAt || s.date || "").toLowerCase().includes(filterValues.cancellationDate.toLowerCase())) {
+        return false;
+      }
+      // Verification Status
+      if (filterValues.verificationStatus) {
+        const isVerified = filterValues.verificationStatus === "Verified";
+        if (s.isVerified !== isVerified) return false;
+      }
+      // Onboarding Status
+      if (filterValues.onboardingStatus) {
+        const isSub = filterValues.onboardingStatus === "Submitted";
+        if (s.onboardingSubmitted !== isSub) return false;
+      }
+      // Orientation Date / Orientation Status
+      if (filterValues.orientationDate && !String(s.orientationDate || s.orientationCompletedAt || "").toLowerCase().includes(filterValues.orientationDate.toLowerCase())) {
+        return false;
+      }
+      if (filterValues.orientationStatus) {
+        const isComp = filterValues.orientationStatus === "Completed";
+        if (s.orientationCompleted !== isComp) return false;
+      }
+      // Learner Status
+      if (filterValues.learnerStatus && s.status !== filterValues.learnerStatus) return false;
+      // Token Status / Token Date
+      if (filterValues.tokenStatus && s.status !== filterValues.tokenStatus) return false;
+      if (filterValues.tokenDate && !String(s.date || "").toLowerCase().includes(filterValues.tokenDate.toLowerCase())) {
+        return false;
+      }
+
       if (dateRange.from || dateRange.to) {
         const rowDate = parseFlexibleDate(s[dateField]);
         if (!rowDate) return false;
@@ -307,7 +622,11 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
       }
       return true;
     });
-  }, [displayRows, deferredQuery, filterValues, dateRange, isPaymentLinkModule, isPaymentsModule]);
+  }, [displayRows, deferredQuery, filterValues, dateRange, view]);
+
+  const filterDefs = useMemo(() => {
+    return getModuleFilters(view, displayRows).filter((f) => f.type !== "text");
+  }, [view, displayRows]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const [page, setPage] = useState(1);
@@ -399,6 +718,23 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
     }
   };
 
+  const handleCancelPaymentLink = async (row) => {
+    if (!row || !row.studentId || !row.paymentLinkId) return;
+    if (!window.confirm("Are you sure you want to cancel this payment link? This will invalidate it in both the CRM and Razorpay gateway, ensuring it can never accept payments again.")) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await cancelPaymentLink(row.studentId, row.paymentLinkId);
+      await refresh();
+    } catch (err) {
+      console.error("Failed to cancel payment link:", err);
+      alert(err.response?.data?.message || "Failed to cancel payment link");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const columns = useMemo(() => {
     if (isPaymentLinkModule) {
       return [
@@ -465,19 +801,32 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
         {
           key: "customerName",
           label: "Student Name",
-          width: "220px",
+          width: "260px",
           cellClassName: "whitespace-nowrap",
           render: (r) => (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/student/${r.studentId}?context=payments`);
-              }}
-              className="inline-flex items-center rounded-full px-2 py-1 font-medium text-skillit transition-colors hover:bg-blue-50"
-            >
-              {r.customerName}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedDrawerPayment(r);
+                }}
+                className="inline-flex items-center justify-center p-1 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-600 transition-all"
+                title="View Payment Details"
+              >
+                <FileText className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/student/${r.studentId}?context=payments`);
+                }}
+                className="inline-flex items-center font-medium text-skillit transition-colors hover:underline"
+              >
+                {r.customerName}
+              </button>
+            </div>
           ),
         },
         { key: "program", label: "Program", width: "220px", cellClassName: "whitespace-nowrap" },
@@ -583,17 +932,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
     ];
   }, [isApprovedModule, isMisApprovalModule, isOrderStageModule, isPaymentLinkModule, isPaymentsModule, isStudentModule, navigate, view]);
 
-  const filterDefs = useMemo(() => {
-    return [
-      { key: "course", label: "Course", options: courses, wide: false },
-      { key: "program", label: "Program", options: programs, wide: true },
-      { key: "batch", label: "Batch", options: batches, wide: false },
-      { key: "reportedTo", label: "Reporting Manager", options: reportingManagers, wide: true },
-      ...(isPaymentLinkModule || isPaymentsModule
-        ? [{ key: "paymentStatus", label: "Payment Status", options: ["Not Generated", "Pending", "Partial", "Paid"], wide: true }]
-        : []),
-    ];
-  }, [courses, programs, batches, reportingManagers, isPaymentLinkModule, isPaymentsModule]);
+
 
   return (
     <div>
@@ -623,60 +962,82 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
 
       {showFilters && (
         <>
-          <FilterBar
-            query={query}
-            onQueryChange={setQuery}
-            filters={filterDefs}
-            values={filterValues}
-            onChange={(k, v) => setFilterValues((f) => ({ ...f, [k]: v }))}
-            onAdvanced={() => setShowAdvanced((v) => !v)}
-            advancedLabel="Advanced Filters"
-          />
+          {/* Row 1: Hierarchy (if any), Universal Search, and Date filter */}
+          <div className="flex flex-wrap items-center gap-3 mb-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+            {visibleLevels.length > 0 && (
+              <>
+                {visibleLevels.map((level, idx) => {
+                  const getOptions = () => {
+                    const allUsers = hierarchyData.users || [];
+                    const filteredByDes = allUsers.filter((u) => u.designation === level);
 
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowDateMenu(false);
-                  setShowSearchMenu((v) => !v);
-                }}
-                className="inline-flex h-12 items-center gap-2 rounded-2xl border border-blue-500 bg-white px-4 text-sm font-medium text-blue-600 shadow-sm transition-colors hover:bg-blue-50"
-              >
-                Search <ChevronDown className="h-4 w-4" />
-              </button>
-              {showSearchMenu && (
-                <div className="absolute left-0 top-14 z-30 w-[320px] rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.16)]">
-                  <p className="text-sm text-slate-700">Name, Unique ID, Email, Phone or UTR</p>
-                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
-                    <input
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Search..."
-                      className="w-full border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
-                    />
-                  </div>
-                  <div className="mt-4 flex justify-end">
-                    <Button type="button" onClick={() => setShowSearchMenu(false)} className="min-w-[90px]">
-                      Close
-                    </Button>
-                  </div>
-                </div>
-              )}
+                    if (idx === 0) {
+                      if (isAdminRole(user.role)) {
+                        return filteredByDes;
+                      }
+                      return filteredByDes.filter((u) => u.reportingTo === user.id);
+                    }
+
+                    const parentLvl = visibleLevels[idx - 1];
+                    const parentSelection = selections[parentLvl];
+                    if (!parentSelection) return [];
+                    return filteredByDes.filter((u) => u.reportingTo === parentSelection);
+                  };
+
+                  const options = getOptions();
+                  const isDisabled = idx > 0 && !selections[visibleLevels[idx - 1]];
+
+                  return (
+                    <Select
+                      key={level}
+                      value={selections[level] || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelections((prev) => {
+                          const next = { ...prev, [level]: val };
+                          for (let i = idx + 1; i < visibleLevels.length; i++) {
+                            delete next[visibleLevels[i]];
+                          }
+                          return next;
+                        });
+                      }}
+                      disabled={isDisabled}
+                      className="!w-[150px] !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]"
+                    >
+                      <option value="">Select {level}</option>
+                      {options.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.name}
+                        </option>
+                      ))}
+                    </Select>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Universal Search Box */}
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 !h-8 shrink-0 w-[260px]">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Universal Search..."
+                className="w-full border-0 bg-transparent text-[11px] outline-none placeholder:text-slate-400 font-medium text-slate-700"
+              />
             </div>
 
+            {/* Date range filter button */}
             {(isPaymentsModule || isPaymentLinkModule || isOrderStageModule) && (
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => {
-                    setShowSearchMenu(false);
                     setShowDateMenu((v) => !v);
                   }}
-                  className="inline-flex h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                  className="inline-flex h-8 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-[11px] text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
                 >
-                  <span className="text-blue-500">{isPaymentsModule ? "Paid Date" : "Date"}</span>
-                  <span className="font-medium text-slate-900">
+                  <span className="text-blue-500 font-semibold">{isPaymentsModule ? "Paid Date" : "Date"}</span>
+                  <span className="font-semibold text-slate-900">
                     {dateRange.from || dateRange.to
                       ? `${formatRangeLabel(dateRange.from) || "Start"} - ${formatRangeLabel(dateRange.to) || "End"}`
                       : isPaymentsModule
@@ -688,14 +1049,14 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
                   <button
                     type="button"
                     onClick={() => setDateRange({ from: "", to: "" })}
-                    className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600 hover:bg-slate-300"
+                    className="absolute -right-2 -top-2 grid h-4 w-4 place-items-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-300"
                     aria-label="Clear date filter"
                   >
                     ×
                   </button>
                 )}
                 {showDateMenu && (
-                  <div className="absolute left-0 top-14 z-30 w-[340px] rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.16)]">
+                  <div className="absolute left-0 top-10 z-50 w-[340px] rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.16)]">
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label="From">
                         <Input
@@ -727,6 +1088,14 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
               </div>
             )}
           </div>
+
+          <FilterBar
+            filters={filterDefs}
+            values={filterValues}
+            onChange={(k, v) => setFilterValues((f) => ({ ...f, [k]: v }))}
+            onAdvanced={() => setShowAdvanced((v) => !v)}
+            advancedLabel="Advanced Filters"
+          />
 
           {showAdvanced && (
             <div className="mb-4 rounded-2xl bg-white px-4 py-3 shadow-card ring-1 ring-slate-100">
@@ -766,7 +1135,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
       )}
 
       {(isStudentModule || isPaymentLinkModule) && (
-        <div className="relative mb-4 flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white/90 px-4 py-3 shadow-card backdrop-blur-sm">
+        <div className="relative z-30 mb-4 flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white/90 px-4 py-3 shadow-card backdrop-blur-sm">
           <div className="flex items-center gap-2">
             {isStudentModule && (
               <div className="relative">
@@ -896,29 +1265,51 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
                   : ""
           }
         expandedId={isStudentModule && canUpdateStudent ? expandedId : null}
-        rowMenu={isStudentModule ? (row) => ([
-          {
-            label: "Drop student",
-            icon: <Trash2 className="h-4 w-4" />,
-            disabled: !canDeleteStudent,
-            title: canDeleteStudent ? undefined : "Delete access is disabled for this role",
-            onClick: () => setDropTarget(row),
-          },
-          {
-            label: "Create payment link",
-            icon: <Link2 className="h-4 w-4" />,
-            disabled: !canCreatePaymentLink,
-            title: canCreatePaymentLink ? undefined : "Create access is disabled for this role",
-            onClick: () => openPaymentLink(row),
-          },
-          canTransferStudent ? {
-            label: "Transfer lead",
-            icon: <RefreshCw className="h-4 w-4" />,
-            disabled: !canUpdateStudent,
-            title: canUpdateStudent ? undefined : "Update access is disabled for this role",
-            onClick: () => setTransferTarget(row),
-          } : null,
-        ].filter(Boolean)) : undefined}
+        rowMenu={
+          isStudentModule
+            ? (row) => ([
+                {
+                  label: "Drop student",
+                  icon: <Trash2 className="h-4 w-4" />,
+                  disabled: !canDeleteStudent,
+                  title: canDeleteStudent ? undefined : "Delete access is disabled for this role",
+                  onClick: () => setDropTarget(row),
+                },
+                {
+                  label: "Create payment link",
+                  icon: <Link2 className="h-4 w-4" />,
+                  disabled: !canCreatePaymentLink,
+                  title: canCreatePaymentLink ? undefined : "Create access is disabled for this role",
+                  onClick: () => openPaymentLink(row),
+                },
+                canTransferStudent ? {
+                  label: "Transfer lead",
+                  icon: <RefreshCw className="h-4 w-4" />,
+                  disabled: !canUpdateStudent,
+                  title: canUpdateStudent ? undefined : "Update access is disabled for this role",
+                  onClick: () => setTransferTarget(row),
+                } : null,
+              ].filter(Boolean))
+            : isPaymentLinkModule
+              ? (row) => ([
+                  {
+                    label: "Send Reminder",
+                    icon: <Mail className="h-4 w-4" />,
+                    disabled: row.paymentLinkStatus === "Paid" || row.paymentLinkStatus === "Cancelled",
+                    onClick: () => {
+                      alert("Reminder functionality is a placeholder and will be integrated in the next stage.");
+                    },
+                  },
+                  {
+                    label: "Cancel Link",
+                    icon: <Trash2 className="h-4 w-4" />,
+                    disabled: row.paymentLinkStatus === "Paid" || row.paymentLinkStatus === "Cancelled" || !canCreatePaymentLink,
+                    title: !canCreatePaymentLink ? "Generate/Cancel payment link access is disabled for this role" : undefined,
+                    onClick: () => handleCancelPaymentLink(row),
+                  },
+                ].filter(Boolean))
+              : undefined
+        }
         renderExpanded={isStudentModule && canUpdateStudent ? (row) => (
           <div className="border-t border-slate-100 bg-[#FAFBFE] px-4 py-4">
             <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
@@ -1080,6 +1471,13 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
         onClose={() => setTransferTarget(null)}
         student={transferTarget}
         onTransferred={refresh}
+      />
+
+      <PaymentDetailsDrawer
+        open={!!selectedDrawerPayment}
+        payment={selectedDrawerPayment}
+        onClose={() => setSelectedDrawerPayment(null)}
+        onDownloadReceipt={handleDownloadReceipt}
       />
     </div>
   );

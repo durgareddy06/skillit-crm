@@ -31,7 +31,7 @@ export async function ensureDefaultRoles() {
     key: "tokens",
     label: "Tokens",
     parentKey: null,
-    basic: { create: true, read: true, update: true, delete: true },
+    basic: { create: true, read: true, update: true, delete: true, details: true },
     administrative: { readAll: false, updateAll: false, deleteAll: false },
     special: { email: true, bulkEmail: false, bulkUpdate: false, bulkDelete: false }
   });

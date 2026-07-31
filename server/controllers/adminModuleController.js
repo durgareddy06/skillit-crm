@@ -11,6 +11,20 @@ function shapeModule(doc) {
     badgeKey: doc.badgeKey || null,
     order: doc.order,
     status: doc.status,
+    actions: Array.isArray(doc.actions)
+      ? doc.actions.map((action) => ({
+          key: action.key,
+          label: action.label,
+          fields: Array.isArray(action.fields)
+            ? action.fields.map((field) => ({
+                key: field.key,
+                name: field.name,
+                type: field.type || "text",
+              }))
+            : [],
+        }))
+      : [],
+    config: doc.config || {},
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -21,12 +35,12 @@ function slugifyKey(value = "") {
 }
 
 export async function listModules(req, res) {
-  const modules = await Module.find().sort({ order: 1, createdAt: 1 }).lean();
+  const modules = await Module.find({ key: { $ne: "enrollments" } }).sort({ order: 1, createdAt: 1 }).lean();
   res.json({ modules: modules.map(shapeModule) });
 }
 
 export async function createModule(req, res) {
-  const { label, parentKey, path, icon, badgeKey, order, status } = req.body || {};
+  const { label, parentKey, path, icon, badgeKey, order, status, actions, config } = req.body || {};
   if (!label || !String(label).trim()) {
     return res.status(400).json({ message: "Module label is required" });
   }
@@ -45,6 +59,8 @@ export async function createModule(req, res) {
     badgeKey: badgeKey || null,
     order: Number.isFinite(order) ? order : 0,
     status: status === "Inactive" ? "Inactive" : "Active",
+    actions: Array.isArray(actions) ? actions : [],
+    config: config || {},
   });
   res.status(201).json({ module: shapeModule(mod) });
 }
@@ -53,7 +69,7 @@ export async function updateModule(req, res) {
   const mod = await Module.findById(req.params.id);
   if (!mod) return res.status(404).json({ message: "Module not found" });
 
-  const fields = ["label", "parentKey", "path", "icon", "badgeKey", "order", "status"];
+  const fields = ["label", "parentKey", "path", "icon", "badgeKey", "order", "status", "actions", "config"];
   for (const f of fields) {
     if (req.body?.[f] !== undefined) mod[f] = req.body[f];
   }

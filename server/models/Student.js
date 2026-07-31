@@ -9,6 +9,8 @@ const paymentSchema = new mongoose.Schema(
     refId: String,
     statementId: String,
     settlementDate: String,
+    invoiceNumber: String,
+    invoiceDate: String,
   },
   { _id: false }
 );
@@ -79,7 +81,15 @@ const studentSchema = new mongoose.Schema(
     orientationLink: { type: String, default: "" },
     recordedLink: { type: String, default: "" },
     internalRemarks: { type: String, default: "" },
+    customFields: { type: Object, default: {} },
     dropped: { type: Boolean, default: false },
+    droppedAt: { type: String, default: "" },
+    orderPunchedAt: { type: String, default: "" },
+    enrolledAt: { type: String, default: "" },
+    cancelledAt: { type: String, default: "" },
+    misApprovedAt: { type: String, default: "" },
+    onboardingSubmittedAt: { type: String, default: "" },
+    orientationCompletedAt: { type: String, default: "" },
 
     createdAt: String,
     createdBy: String,
@@ -88,6 +98,8 @@ const studentSchema = new mongoose.Schema(
     // access-control decision must use this id, never the name.
     createdById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     reportedTo: String,
+    reportedToId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    reportingHierarchyIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], default: [] },
     department: String,
 
     passwordHash: { type: String, default: null },
@@ -95,6 +107,11 @@ const studentSchema = new mongoose.Schema(
     verificationToken: { type: String, default: null },
     resetPasswordToken: { type: String, default: null },
     resetPasswordExpires: { type: Date, default: null },
+
+    orderPunchedEmailSent: { type: Boolean, default: false },
+    misApprovedEmailSent: { type: Boolean, default: false },
+    onboardingEmailSent: { type: Boolean, default: false },
+    orientationEmailSent: { type: Boolean, default: false },
 
     // Lead-transfer audit trail (append-only, backend-populated only).
     transferHistory: {
@@ -120,6 +137,7 @@ studentSchema.index({ paymentLinkGenerated: 1, dropped: 1, _id: -1 });
 studentSchema.index({ paidAmount: 1, dropped: 1, _id: -1 });
 studentSchema.index({ orderPunched: 1, status: 1, dropped: 1, _id: -1 });
 studentSchema.index({ onboardingSubmitted: 1, orientationCompleted: 1, dropped: 1, _id: -1 });
+studentSchema.index({ reportingHierarchyIds: 1 });
 studentSchema.index({ customerName: "text", uniqueId: "text", email: "text", contactNumber: "text", altContactNumber: "text", primaryContactName: "text", sdeName: "text", manager: "text", course: "text", program: "text", batch: "text", leadLink: "text" });
 
 export default mongoose.model("Student", studentSchema);

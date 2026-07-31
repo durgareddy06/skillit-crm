@@ -3,7 +3,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { userHasPermission } from "../utils/permissions.js";
 import {
   listTickets, getTicket, createTicket, assignTicket, resolveTicket, replyTicket,
-  getSupportTickets, getTechTickets, getRMTickets
+  ticketSummary, getSupportTickets, getTechTickets, getRMTickets
 } from "../controllers/ticketController.js";
 
 const router = Router();
@@ -37,6 +37,7 @@ const handleBodyIdParam = (req, res, next) => {
 // #2 TOKENS (SUPPORT) MODULE - LISTING & DEPARTMENT QUEUES
 // ==============================================================================
 router.get("/", requireTokensPermission("read"), listTickets);
+router.get("/summary", requireTokensPermission("read"), ticketSummary);
 router.get("/team/support", requireTokensPermission("read"), getSupportTickets);
 router.get("/team/tech", requireTokensPermission("read"), getTechTickets);
 router.get("/team/rm", requireTokensPermission("read"), getRMTickets);

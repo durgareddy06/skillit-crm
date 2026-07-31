@@ -1,192 +1,301 @@
-function slugify(value) {
-  return String(value || "student")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 24) || "student";
+/**
+ * activityFeed.js
+ *
+ * Builds the Activity drawer feed 100 % from live student data.
+ * No hardcoded dates, names, amounts, or placeholder strings.
+ * Each entry is only added when the corresponding real data exists.
+ */
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Formats a stored date/timestamp string to a readable label.
+ * Accepts "DD/MM/YYYY, HH:MM:SS" (en-GB locale from backend) or ISO strings.
+ */
+function fmtDateTime(raw) {
+  if (!raw) return "";
+  // en-GB locale format: "24/07/2026, 12:34:56"
+  const gbMatch = String(raw).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{2}:\d{2})/);
+  if (gbMatch) {
+    const [, day, month, year, time] = gbMatch;
+    const [hh, mm] = time.split(":");
+    const h = Number(hh);
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = h % 12 || 12;
+    return `${day} ${MONTHS[Number(month) - 1]} ${year} - ${h12}:${mm}${ampm}`;
+  }
+  // ISO: "2026-07-24T12:34:56.000Z"
+  const isoMatch = String(raw).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (isoMatch) {
+    const [, year, month, day, hh, mm] = isoMatch;
+    const h = Number(hh);
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = h % 12 || 12;
+    return `${day} ${MONTHS[Number(month) - 1]} ${year} - ${h12}:${mm}${ampm}`;
+  }
+  // DD-MM-YYYY (legacy stored date)
+  const legacyMatch = String(raw).match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (legacyMatch) {
+    const [, day, month, year] = legacyMatch;
+    return `${day} ${MONTHS[Number(month) - 1]} ${year}`;
+  }
+  return String(raw);
 }
 
-function formatPhone(phone) {
-  if (!phone) return "+91 98765 43210";
-  return String(phone);
+/** Format a plain date string (YYYY-MM-DD or DD-MM-YYYY) to "24 Jul 2026" */
+function fmtDate(raw) {
+  if (!raw) return "";
+  const iso = String(raw).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    const [, year, month, day] = iso;
+    return `${Number(day)} ${MONTHS[Number(month) - 1]} ${year}`;
+  }
+  const legacy = String(raw).match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (legacy) {
+    const [, day, month, year] = legacy;
+    const fullYear = year.length === 2 ? `20${year}` : year;
+    return `${Number(day)} ${MONTHS[Number(month) - 1]} ${fullYear}`;
+  }
+  return String(raw);
 }
 
-function baseStudent(student = {}) {
-  const safeStudent = student || {};
-  return {
-    name: safeStudent.customerName || "Rahul Sharma",
-    program: safeStudent.program || safeStudent.course || "Data Science Master's Program",
-    batch: safeStudent.batch || "B7",
-    contactName: safeStudent.primaryContactName || safeStudent.customerName || "Rahul Sharma",
-    phone: formatPhone(safeStudent.contactNumber),
-    whatsapp: formatPhone(safeStudent.altContactNumber || safeStudent.contactNumber),
-    email: safeStudent.email || "rahul.sharma@gmail.com",
-    branch: safeStudent.graduatedBranch || "CSE",
-    graduationYear: safeStudent.graduationYear || "2023",
-    category: safeStudent.category || "Fresher",
-    course: safeStudent.course || "Full Stack Development",
-    courseFee: Number(safeStudent.saleValue || 70000).toLocaleString("en-IN"),
-    loanId: safeStudent.loanId || `https://crm.example.com/student/${safeStudent.uniqueId || "STU-2026-1045"}`,
-    uniqueId: safeStudent.uniqueId || "STU-2026-1045",
-    slug: slugify(safeStudent.customerName),
-  };
+/** Format ₹ money from a raw number */
+function fmtMoney(n) {
+  return `₹${Number(n || 0).toLocaleString("en-IN")}`;
 }
+
+/** Safe fallback for any field */
+function val(v, fallback = "—") {
+  const s = String(v || "").trim();
+  return s || fallback;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function getActivityFeed(student) {
-  const s = baseStudent(student);
+  if (!student) return { all: [], callLogs: [], payments: [], onboardings: [] };
+
+  const s = student;
+  const createdBy = val(s.createdBy);
+  const sdeName = val(s.sdeName || s.createdBy);
+  const managerName = val(s.manager || s.reportedTo);
+
+  const allItems = [];
+  const paymentItems = [];
+  const onboardingItems = [];
+
+  // ── 1. Student Created ─────────────────────────────────────────────────────
+  if (s.createdAt) {
+    allItems.push({
+      title: `Student created by ${createdBy}`,
+      at: fmtDateTime(s.createdAt),
+      details: [
+        `Student Name: ${val(s.customerName)}`,
+        `Program: ${val(s.program || s.course)}`,
+        `Batch: ${val(s.batch)}`,
+        `Primary Contact Name: ${val(s.primaryContactName || s.customerName)}`,
+        `Primary Contact Number: ${val(s.contactNumber)}`,
+        `Primary Contact Email: ${val(s.email)}`,
+        `Course Fee: ${fmtMoney(s.saleValue)}`,
+        s.sdeName ? `SDE: ${s.sdeName}` : null,
+        s.manager ? `Manager: ${s.manager}` : null,
+      ].filter(Boolean),
+    });
+  }
+
+  // ── 2. Payment Links generated ────────────────────────────────────────────
+  const paymentLinks = Array.isArray(s.paymentLinks) && s.paymentLinks.length > 0
+    ? s.paymentLinks
+    : s.paymentLinkGenerated
+      ? [{
+          linkId: s.paymentLinkId || s.id,
+          amount: s.paymentLinkAmount,
+          status: s.paymentLinkStatus || "Pending",
+          url: s.paymentLinkUrl || "",
+          createdAt: s.paymentLinkCreatedAt || s.createdAt || "",
+        }]
+      : [];
+
+  for (const link of paymentLinks) {
+    const entry = {
+      title: `Payment Link Generated by ${sdeName}`,
+      at: fmtDateTime(link.createdAt),
+      details: [
+        `Amount: ${fmtMoney(link.amount)}`,
+        `Status: ${val(link.status, "Pending")}`,
+        link.createdAt ? `Created On: ${fmtDateTime(link.createdAt)}` : null,
+        link.url ? `Link: ${link.url}` : null,
+      ].filter(Boolean),
+    };
+    allItems.push(entry);
+    paymentItems.push(entry);
+  }
+
+  // ── 3. Payments added ─────────────────────────────────────────────────────
+  const payments = Array.isArray(s.payments) ? s.payments : [];
+  let runningPaid = 0;
+  const netPayable = Math.max(0, Number(s.saleValue || 0) - Number(s.discount || 0));
+
+  for (const p of payments) {
+    const amt = Number(p.amount || 0);
+    const prevPaid = runningPaid;
+    runningPaid += amt;
+    const prevOutstanding = Math.max(0, netPayable - prevPaid);
+    const newOutstanding = Math.max(0, netPayable - runningPaid);
+
+    const entry = {
+      title: `Payment Added by ${sdeName}`,
+      at: fmtDateTime(p.paidDate),
+      details: [
+        `Amount Received: ${fmtMoney(amt)} from ${val(s.customerName)}`,
+        `Payment Mode: ${val(p.mode || s.paymentMode)}`,
+        p.refId ? `Reference ID: ${p.refId}` : null,
+        p.paidDate ? `Transaction Date: ${fmtDateTime(p.paidDate)}` : null,
+        `Outstanding updated from ${fmtMoney(prevOutstanding)} to ${fmtMoney(newOutstanding)}`,
+      ].filter(Boolean),
+    };
+    allItems.push(entry);
+    paymentItems.push(entry);
+  }
+
+  // ── 4. Order Punched ──────────────────────────────────────────────────────
+  if (s.orderPunched && s.orderPunchedAt) {
+    allItems.push({
+      title: `Order Punched by ${sdeName}`,
+      at: fmtDateTime(s.orderPunchedAt),
+      details: [
+        `Customer Name: ${val(s.customerName)}`,
+        `Primary Contact Name: ${val(s.primaryContactName || s.customerName)}`,
+        `Primary Contact Number: ${val(s.contactNumber)}`,
+        `Course: ${val(s.course || s.program)}`,
+        `Batch: ${val(s.batch)}`,
+        `Cycle: ${val(s.cycle)}`,
+        `Month: ${val(s.month)}`,
+        s.paymentMode ? `Payment Mode: ${s.paymentMode}` : null,
+        `Sale Value: ${fmtMoney(s.saleValue)}`,
+        `Paid Amount: ${fmtMoney(s.paidAmount)}`,
+        `Outstanding: ${fmtMoney(s.outstanding)}`,
+        s.demoDoneBy ? `Demo Done By: ${s.demoDoneBy}` : null,
+        `SDE: ${sdeName}`,
+        `Manager: ${managerName}`,
+      ].filter(Boolean),
+    });
+  }
+
+  // ── 5. Enrolled ───────────────────────────────────────────────────────────
+  if (s.status === "Enrolled" && s.enrolledAt) {
+    allItems.push({
+      title: `Student Enrolled by ${managerName}`,
+      at: fmtDateTime(s.enrolledAt),
+      details: [
+        `Status changed to Enrolled`,
+        `Course: ${val(s.course || s.program)}`,
+        `Batch: ${val(s.batch)}`,
+      ],
+    });
+  }
+
+  // ── 5a. Cancelled ───────────────────────────────────────────────────────────
+  if (s.status === "Cancelled" && s.cancelledAt) {
+    allItems.push({
+      title: `Student Registration Cancelled`,
+      at: fmtDateTime(s.cancelledAt),
+      details: [
+        `Status changed to Cancelled`,
+        s.internalRemarks ? `Remarks: ${s.internalRemarks}` : null,
+      ].filter(Boolean),
+    });
+  }
+
+  // ── 5b. Dropped ─────────────────────────────────────────────────────────────
+  if (s.dropped && s.droppedAt) {
+    allItems.push({
+      title: `Student Dropped from Program`,
+      at: fmtDateTime(s.droppedAt),
+      details: [
+        `Status changed to Dropped`,
+        s.internalRemarks ? `Remarks: ${s.internalRemarks}` : null,
+      ].filter(Boolean),
+    });
+  }
+
+  // ── 5c. Lead Transferred ───────────────────────────────────────────────────
+  if (Array.isArray(s.transferHistory) && s.transferHistory.length > 0) {
+    for (const t of s.transferHistory) {
+      const fromName = t.fromUserId?.name || "Unassigned";
+      const toName = t.toUserId?.name || "Unknown SDE";
+      const byName = t.transferredBy?.name || "System";
+      allItems.push({
+        title: `Lead Transferred by ${byName}`,
+        at: fmtDateTime(t.transferredAt),
+        details: [
+          `Transferred from: ${fromName}`,
+          `Transferred to: ${toName}`,
+          `Transferred on: ${fmtDateTime(t.transferredAt)}`,
+        ],
+      });
+    }
+  }
+
+  // ── 6. MIS Approved ───────────────────────────────────────────────────────
+  if (s.misStatus === "approved" && s.misApprovedAt) {
+    allItems.push({
+      title: `MIS Approved`,
+      at: fmtDateTime(s.misApprovedAt),
+      details: [
+        "MIS checklist reviewed and approved",
+        s.internalRemarks ? `Remarks: ${s.internalRemarks}` : "No internal remarks",
+      ],
+    });
+  }
+
+  // ── 7. Onboarding Submitted ───────────────────────────────────────────────
+  if (s.onboardingSubmitted) {
+    const onboardingEntry = {
+      title: `Onboarding Submitted by ${sdeName}`,
+      at: s.onboardingSubmittedAt ? fmtDateTime(s.onboardingSubmittedAt) : (s.onboardingDate ? fmtDate(s.onboardingDate) : ""),
+      details: [
+        `Full Name: ${val(s.customerName)}`,
+        `Phone Number: ${val(s.contactNumber)}`,
+        `WhatsApp Number: ${val(s.altContactNumber || s.contactNumber)}`,
+        `Email Address: ${val(s.email)}`,
+        s.graduatedBranch ? `Graduated In / Branch: ${s.graduatedBranch}` : null,
+        s.graduationYear ? `Graduation Year: ${s.graduationYear}` : null,
+        s.category ? `Category: ${s.category}` : null,
+        `Course: ${val(s.course || s.program)}`,
+        `Batch: ${val(s.batch)}`,
+        s.onboardingDate ? `Onboarding Date: ${fmtDate(s.onboardingDate)}` : null,
+        s.onboardingComments ? `Verification Comments: ${s.onboardingComments}` : null,
+      ].filter(Boolean),
+    };
+    allItems.push(onboardingEntry);
+    onboardingItems.push(onboardingEntry);
+  }
+
+  // ── 8. Orientation Completed ──────────────────────────────────────────────
+  if (s.orientationCompleted) {
+    const orientationEntry = {
+      title: `Orientation Completed by ${sdeName}`,
+      at: s.orientationCompletedAt ? fmtDateTime(s.orientationCompletedAt) : (s.orientationDate ? fmtDate(s.orientationDate) : ""),
+      details: [
+        s.orientationDate ? `Orientation Date: ${fmtDate(s.orientationDate)}` : null,
+        s.orientationLink ? `Orientation Link: ${s.orientationLink}` : null,
+        s.recordedLink ? `Recorded Link: ${s.recordedLink}` : null,
+        s.internalRemarks ? `Internal Remarks: ${s.internalRemarks}` : null,
+      ].filter(Boolean),
+    };
+    allItems.push(orientationEntry);
+    onboardingItems.push(orientationEntry);
+  }
+
+  // ── Call Logs (no real data stored yet — show empty state gracefully) ──────
+  // When a call-log API is integrated, replace this with real data.
+  const callLogs = [];
 
   return {
-    all: [
-      {
-        title: `student created by Ranadheer`,
-        at: "03 Jun 2026 - 11:43PM",
-        details: [
-          `Student Name: ${s.name}`,
-          `Program: ${s.program}`,
-          `Batch: ${s.batch}`,
-          `Primary Contact Name: ${s.contactName}`,
-          `Primary Contact Number: ${s.phone}`,
-          `Primary Contact Email: ${s.email}`,
-          `Course Fee: ₹${s.courseFee}`,
-        ],
-      },
-      {
-        title: "Payment link Generated by Ranadheer",
-        at: "04 Jun 2026 - 11:43PM",
-        details: [
-          "Amount: ₹5,000",
-          "Status: Paid",
-          "Created On: 04 Jun 2026, 11:45 AM",
-          `Link: https://crm.example.com/student/${s.uniqueId}`,
-        ],
-      },
-      {
-        title: "Payment Added by Ranadheer",
-        at: "12 Jun 2026 - 11:43PM",
-        details: [
-          "Payment of ₹25,000 received from Rahul Sharma",
-          "Payment Mode: Cash",
-          `Loan ID: https://crm.example.com/student/${s.uniqueId}`,
-          "Transaction Date: 12 Jun 2026",
-          "Outstanding Amount updated from ₹65,000 to ₹30,000",
-        ],
-      },
-      {
-        title: "Order Punched by Ranadheer",
-        at: "13 Jun 2026 - 11:43PM",
-        details: [
-          `Customer Name: ${s.contactName}`,
-          `Primary Contact Name: ${s.contactName}`,
-          `Primary Contact Number: ${s.phone}`,
-          `Program: ${s.program}`,
-        ],
-      },
-      {
-        title: "MIS approved by Ranadheer",
-        at: "15 Jun 2026 - 04:22PM",
-        details: [
-          "Approved with no remarks",
-          "MIS checklist completed",
-        ],
-      },
-      {
-        title: "Onboarding submitted by Divya",
-        at: "16 Jun 2026 - 01:05PM",
-        details: [
-          "Verification checklist completed",
-          "Student details verified and approved for onboarding",
-        ],
-      },
-      {
-        title: "Orientation completed by Divya",
-        at: "18 Jun 2026 - 10:30AM",
-        details: [
-          "Recording uploaded",
-          "Orientation marked completed",
-        ],
-      },
-    ],
-    callLogs: [
-      {
-        title: "Outbound: Connected to pavan",
-        at: "13 May 2026",
-        meta: "5:54 PM  •  05:43 Min",
-        audio: "onboarding_call_john_doe.mp3",
-        details: [],
-      },
-      {
-        title: "Inbound: Connected to Sai",
-        at: "13 May 2026",
-        meta: "5:54 PM  •  05:43 Min",
-        audio: "onboarding_call_john_doe.mp3",
-        details: [],
-      },
-      {
-        title: "Outbound: Not Connected",
-        at: "13 May 2026",
-        meta: "5:54 PM  •  05:43 Min",
-        audio: "",
-        details: [],
-      },
-    ],
-    payments: [
-      {
-        title: "Payment link Generated by Ranadheer",
-        at: "04 Jun 2026 - 11:43PM",
-        details: [
-          "Amount: ₹5,000",
-          "Status: Paid",
-          "Created On: 04 Jun 2026, 11:45 AM",
-          `Link: https://crm.example.com/student/${s.uniqueId}`,
-        ],
-      },
-      {
-        title: "Payment Added by Ranadheer",
-        at: "12 Jun 2026 - 11:43PM",
-        details: [
-          "Payment of ₹25,000 received from Rahul Sharma",
-          "Payment Mode: Cash",
-          `Loan ID: https://crm.example.com/student/${s.uniqueId}`,
-          "Transaction Date: 12 Jun 2026",
-          "Outstanding Amount updated from ₹65,000 to ₹30,000",
-        ],
-      },
-    ],
-    onboardings: [
-      {
-        title: "Onboarding done by Vamsi Krishna",
-        at: "14 Jun 2026 - 11:43PM",
-        details: [
-          `Full Name: ${s.name}`,
-          `Phone Number: ${s.phone}`,
-          `WhatsApp Number: ${s.whatsapp}`,
-          `Email Address: ${s.email}`,
-          `Graduated In / Branch: ${s.branch}`,
-          `Graduation Year: ${s.graduationYear}`,
-          `Category: ${s.category}`,
-          `Course: ${s.course}`,
-          `Batch: ${s.batch}`,
-          "Course Duration Verified: Yes",
-          "Payment Details Verified: Yes",
-          "Job Assistance Opt-in: Yes",
-          "Verification Comments: Student details verified and approved for onboarding.",
-          "Onboarding Date: 20 Jun 2026",
-          `Call Recording: onboarding_call_${s.slug}.mp3`,
-          "Orientation Date: 22 Jun 2026",
-          "Orientation Link: https://meet.example.com/orientation-john",
-          "Recorded Link: https://drive.example.com/recordings/john-orientation",
-        ],
-      },
-      {
-        title: "Orientation done by Vamsi Krishna",
-        at: "15 Jun 2026 - 11:43PM",
-        details: [
-          "Orientation Date: 15 Jun 2026",
-          "Orientation Link: https://zoom.us/j/12345678",
-          "Recorded Link: https://drive.example.com/recordings/orientation-25jun",
-          "Internal Remarks: Student attended orientation successfully and onboarding completed.",
-        ],
-      },
-    ],
+    all: allItems,
+    callLogs,
+    payments: paymentItems,
+    onboardings: onboardingItems,
   };
 }

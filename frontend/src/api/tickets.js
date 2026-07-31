@@ -6,6 +6,11 @@ export async function getTickets(resolved = false) {
   return res.data;
 }
 
+export async function getTicketSummary() {
+  const res = await api.get("/tickets/summary");
+  return res.data;
+}
+
 // Fetch a single ticket by its ID
 export async function getTicketById(id) {
   const res = await api.get(`/tickets/${id}`);

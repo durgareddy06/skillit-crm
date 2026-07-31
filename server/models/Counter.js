@@ -25,4 +25,13 @@ export async function nextTicketId() {
   return `TKT-${String(counter.seq).padStart(4, "0")}`;
 }
 
+export async function nextInvoiceNumber() {
+  const counter = await Counter.findByIdAndUpdate(
+    "invoiceNumber",
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  return `INV-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(counter.seq).padStart(4, "0")}`;
+}
+
 export default Counter;

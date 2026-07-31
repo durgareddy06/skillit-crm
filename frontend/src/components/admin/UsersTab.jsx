@@ -45,9 +45,9 @@ const UsersTab = forwardRef(function UsersTab({ users, loading, search, onRefres
     onRefresh();
   };
 
-  const handleDelete = async (u) => {
-    if (!window.confirm(`Delete ${u.name}? This can't be undone.`)) return;
-    await adminApi.deleteUser(u.id);
+  const handleArchive = async (u) => {
+    if (!window.confirm(`Archive user "${u.name}"?`)) return;
+    await adminApi.archiveUser(u.id);
     setModalOpen(false);
     onRefresh();
   };
@@ -99,7 +99,7 @@ const UsersTab = forwardRef(function UsersTab({ users, loading, search, onRefres
         emptyText={loading ? "Loading users…" : "No users yet. Use the + button to create one."}
         rowMenu={(r) => [
           { label: "Edit", onClick: () => openEdit(r) },
-          { label: "Delete", onClick: () => handleDelete(r) },
+          { label: "Archive", onClick: () => handleArchive(r) },
         ]}
       />
 
@@ -107,7 +107,7 @@ const UsersTab = forwardRef(function UsersTab({ users, loading, search, onRefres
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSave={handleSave}
-        onDelete={handleDelete}
+        onArchive={handleArchive}
         onResetPassword={handleResetPassword}
         onResetLoginAttempts={handleResetLoginAttempts}
         user={editingUser}

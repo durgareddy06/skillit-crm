@@ -1,5 +1,18 @@
+import mongoose from "mongoose";
 import Role from "../models/Role.js";
 import Module from "../models/Module.js";
+import User from "../models/User.js";
+
+// Lazy-load hierarchy.js to break the circular dependency
+// (hierarchy.js statically imports from permissions.js).
+// The first call resolves and caches the module; subsequent calls reuse it.
+let _hierarchyModule = null;
+async function getHierarchyModule() {
+  if (!_hierarchyModule) {
+    _hierarchyModule = await import("./hierarchy.js");
+  }
+  return _hierarchyModule;
+}
 
 // Fallback seed used ONLY by seed.js the very first time the Module
 // collection is empty (so a fresh database boots with the modules the
@@ -13,8 +26,7 @@ export const DEFAULT_MODULE_SEED = [
   { key: "payments.archive", label: "Archive", parentKey: "payments", order: 32 },
   { key: "booked-orders", label: "Booked Orders", order: 40 },
   { key: "pending", label: "Pending", order: 50 },
-  { key: "enrolled", label: "Enrolled", order: 55 },
-  { key: "enrollments", label: "Enrollments", order: 60 },
+  { key: "enrolled", label: "Enrollments", order: 55 },
   { key: "mis-approval", label: "MIS Approval", order: 70 },
   { key: "approved", label: "Approved", order: 80 },
   { key: "cancelled", label: "Cancelled", order: 90 },
@@ -32,7 +44,7 @@ function blankRow(mod) {
     key: mod.key,
     label: mod.label,
     parentKey: mod.parentKey || null,
-    basic: { create: false, read: false, update: false, delete: false },
+    basic: { create: false, read: false, update: false, delete: false, details: false },
     administrative: { readAll: false, updateAll: false, deleteAll: false },
     special: { email: false, bulkEmail: false, bulkUpdate: false, bulkDelete: false },
   };
@@ -43,7 +55,7 @@ function fullRow(mod) {
     key: mod.key,
     label: mod.label,
     parentKey: mod.parentKey || null,
-    basic: { create: true, read: true, update: true, delete: true },
+    basic: { create: true, read: true, update: true, delete: true, details: true },
     administrative: { readAll: true, updateAll: true, deleteAll: true },
     special: { email: true, bulkEmail: true, bulkUpdate: true, bulkDelete: true },
   };
@@ -51,7 +63,7 @@ function fullRow(mod) {
 
 // Every module currently registered in the database, ordered for display.
 export async function getAllModules() {
-  return Module.find({ status: "Active" }).sort({ order: 1, createdAt: 1 }).lean();
+  return Module.find({ status: "Active", key: { $ne: "enrollments" } }).sort({ order: 1, createdAt: 1 }).lean();
 }
 
 // Full-access permission rows for every module — used only for the
@@ -88,30 +100,110 @@ export async function reconcileRolePermissionRows(submittedRows = []) {
   });
 }
 
+function mergePermissionRows(targetRows, sourceRows) {
+  const mergedMap = new Map();
+  
+  const addRow = (row) => {
+    if (!row || !row.key) return;
+    const existing = mergedMap.get(row.key);
+    if (!existing) {
+      mergedMap.set(row.key, JSON.parse(JSON.stringify(row)));
+      return;
+    }
+    
+    if (row.basic) {
+      existing.basic = existing.basic || {};
+      for (const k of Object.keys(row.basic)) {
+        existing.basic[k] = existing.basic[k] || row.basic[k];
+      }
+    }
+    if (row.administrative) {
+      existing.administrative = existing.administrative || {};
+      for (const k of Object.keys(row.administrative)) {
+        existing.administrative[k] = existing.administrative[k] || row.administrative[k];
+      }
+    }
+    if (row.special) {
+      existing.special = existing.special || {};
+      for (const k of Object.keys(row.special)) {
+        existing.special[k] = existing.special[k] || row.special[k];
+      }
+    }
+  };
+
+  targetRows.forEach(addRow);
+  sourceRows.forEach(addRow);
+  
+  return [...mergedMap.values()];
+}
+
 export async function resolveEffectivePermissions(user) {
   if (!user) return [];
   if (normalize(user.role) === "admin") return buildFullAccessPermissions();
 
-  // Primary, authoritative path: a hard foreign key to the Role document.
-  // No string comparison involved at all, so renames/typos/casing in
-  // `designation` or `role` can never desync a user from their role.
+  const userId = String(user.id || user._id || "");
+
+  let ownPermissions = [];
   if (user.roleId) {
     const role = await Role.findById(user.roleId).select("name status permissions").lean();
-    if (role && role.status === "Active") return role.permissions || [];
-    if (role) return []; // role exists but has been deactivated — deny, don't fall back
+    if (role && role.status === "Active") ownPermissions = role.permissions || [];
+  } else {
+    const candidates = [user.designation, user.role]
+      .filter(Boolean)
+      .map((value) => normalize(value));
+    if (candidates.length > 0) {
+      const roles = await Role.find({ status: "Active" }).select("name permissions").lean();
+      const match = roles.find((role) => candidates.includes(normalize(role.name)));
+      ownPermissions = match?.permissions || [];
+    }
   }
 
-  // Legacy fallback for any user record created before roleId existed.
-  // Safe to keep: it only ever runs when roleId is completely absent.
-  const candidates = [user.designation, user.role]
-    .filter(Boolean)
-    .map((value) => normalize(value));
-  if (candidates.length === 0) return [];
+  // Inherit permissions recursively from subordinates.
+  // A superior role automatically receives the union (OR) of all permissions
+  // held by every role in its subordinate hierarchy — no hardcoded role
+  // names, purely driven by the Team manager→members reporting structure.
+  try {
+    const hierarchy = await getHierarchyModule();
+    const subordinateIds = await hierarchy.getManagedUserIds(user, { includeSelf: false });
 
-  const roles = await Role.find({ status: "Active" }).select("name permissions").lean();
-  const match = roles.find((role) => candidates.includes(normalize(role.name)));
-  return match?.permissions || [];
+    if (subordinateIds && subordinateIds.length > 0) {
+      const validIds = subordinateIds.filter(id => mongoose.isValidObjectId(id));
+
+      const subordinates = await User.find({
+        _id: { $in: validIds },
+        status: "Active"
+      }).select("roleId").lean();
+
+      // Deduplicate role IDs — many subordinates may share the same role,
+      // and we only need to merge each unique role's permissions once.
+      const uniqueSubRoleIds = [
+        ...new Set(subordinates.map(s => String(s.roleId)).filter(Boolean))
+      ];
+
+      if (uniqueSubRoleIds.length > 0) {
+        const subRoles = await Role.find({
+          _id: { $in: uniqueSubRoleIds },
+          status: "Active"
+        }).select("name permissions").lean();
+
+        for (const subRole of subRoles) {
+          if (subRole.permissions && subRole.permissions.length > 0) {
+            ownPermissions = mergePermissionRows(ownPermissions, subRole.permissions);
+          }
+        }
+
+        console.log(
+          `[Permissions] User ${userId} inherited permissions from ${subRoles.length} subordinate role(s): ${subRoles.map(r => r.name).join(", ")}`
+        );
+      }
+    }
+  } catch (err) {
+    console.error(`[Permissions] Error inheriting subordinate permissions for user ${userId}:`, err);
+  }
+
+  return ownPermissions;
 }
+
 
 // -----------------------------------------------------------------------
 // Action -> module mapping.
@@ -156,8 +248,8 @@ export const ACTION_MODULE_MAP = {
   "create-booked-order": [{ key: "booked-orders", action: "create" }],
   "enroll-student": [{ key: "pending", action: "create" }],
   "cancel-student": [{ key: "pending", action: "create" }],
-  "mis-approve": [{ key: "mis-approval", action: "update" }],
-  "mis-escalate": [{ key: "mis-approval", action: "update" }],
+  "mis-approve": [{ key: "mis-approval", action: "create" }],
+  "mis-escalate": [{ key: "mis-approval", action: "create" }],
   "drop-student": [{ key: "student", action: "delete" }],
   "edit-student": [
     { key: "student", action: "update" },
@@ -176,9 +268,45 @@ export const ACTION_MODULE_MAP = {
 // enforces the independent per-action-group rule (toggling one action never
 // implies another) — this only widens *which module row* is allowed to
 // satisfy a given action, per the documented mapping.
-export async function userHasActionPermission(user, actionKey) {
+export async function userHasActionPermission(user, actionKey, context) {
   if (!user) return false;
   if (normalize(user.role) === "admin") return true;
+
+  const getContextKey = () => {
+    if (context === "pending") return "pending";
+    if (context === "payment-link") return "payment-link";
+    if (context === "payments") return "payments";
+    if (context === "booked-orders") return "booked-orders";
+    if (context === "mis-approval") return "mis-approval";
+    if (context === "onboarding") return "onboarding";
+    if (context === "orientation") return "orientation";
+    if (context === "learners") return "learners";
+    if (context === "tokens") return "tokens";
+    return "student";
+  };
+  const contextKey = getContextKey();
+
+  if (actionKey === "create-student") {
+    return await userHasPermission(user, "student", "create");
+  }
+  if (actionKey === "generate-payment-link" || actionKey === "add-payment" || actionKey === "punch-order" || actionKey === "enroll-student") {
+    return await userHasPermission(user, contextKey, "create");
+  }
+  if (actionKey === "cancel-student") {
+    return await userHasPermission(user, contextKey, "create");
+  }
+  if (actionKey === "mis-approve" || actionKey === "mis-escalate") {
+    return await userHasPermission(user, "mis-approval", "create");
+  }
+  if (actionKey === "drop-student") {
+    return await userHasPermission(user, "student", "delete");
+  }
+  if (actionKey === "edit-student") {
+    return await userHasPermission(user, contextKey, "update");
+  }
+  if (actionKey === "transfer-lead") {
+    return await userHasPermission(user, "student", "update");
+  }
 
   const rules = ACTION_MODULE_MAP[actionKey];
   if (!rules || rules.length === 0) return false;
@@ -197,12 +325,25 @@ export async function userHasPermission(user, moduleKey, action) {
   if (!user || !moduleKey || !action) return false;
   if (normalize(user.role) === "admin") return true;
 
-  const permissions = await resolveEffectivePermissions(user);
+  // Per-request cache: resolve permissions once per user object, reuse for
+  // all subsequent checks within the same HTTP request. The user object is
+  // freshly created per request in middleware/auth.js, so this cache
+  // naturally expires when the request ends.
+  if (!user._permissionsCache) {
+    user._permissionsCache = await resolveEffectivePermissions(user);
+  }
+  const permissions = user._permissionsCache;
+
   const row = permissions.find((perm) => normalize(perm?.key) === normalize(moduleKey));
   if (!row) return false;
 
+  // Let administrative permissions imply their basic counterparts
+  if (action === "read" && row.administrative?.readAll) return true;
+  if (action === "update" && row.administrative?.updateAll) return true;
+  if (action === "delete" && row.administrative?.deleteAll) return true;
+
   const groups = {
-    basic: ["create", "read", "update", "delete"],
+    basic: ["create", "read", "update", "delete", "details"],
     administrative: ["readAll", "updateAll", "deleteAll"],
     special: ["email", "bulkEmail", "bulkUpdate", "bulkDelete"],
   };

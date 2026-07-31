@@ -38,6 +38,13 @@ export function isCustomerSupportDesignation(value = "") {
 export function canTransferLead(user) {
   if (!user) return false;
   if (user.role === "admin") return true;
-  const designation = user.designation || user.role;
-  return isManagerDesignation(designation) || isSrManagerDesignation(designation);
+  // Dynamic: any user who has the student/update permission (whether from
+  // their own role or inherited from subordinates) can transfer leads.
+  // This replaces the old hardcoded Manager/Sr.Manager check.
+  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  const studentRow = permissions.find(
+    (row) => row && String(row.key).trim().toLowerCase().replace(/[\s._-]+/g, "") === "student"
+  );
+  if (!studentRow) return false;
+  return Boolean(studentRow.basic?.update) || Boolean(studentRow.administrative?.updateAll);
 }

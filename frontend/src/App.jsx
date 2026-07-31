@@ -28,11 +28,7 @@ function HomeRedirect() {
 }
 
 function EnrolledRoute() {
-  return <StudentListPage title="Enrolled" view="enrolled" emptyText="No one enrolled yet." />;
-}
-
-function EnrollmentQueueRoute() {
-  return <StudentListPage title="Enrollments" view="enrollments" emptyText="No enrollments yet." />;
+  return <StudentListPage title="Enrollments" view="enrolled" emptyText="No one enrolled yet." />;
 }
 
 export default function App() {
@@ -59,8 +55,7 @@ export default function App() {
             element={<StudentListPage title="Booked Orders" view="booked-orders" emptyText="No orders punched yet." />}
           />
           <Route path="/pending" element={<StudentListPage title="Pending" view="pending" emptyText="Nothing pending." />} />
-          <Route path="/enrolled" element={<EnrolledRoute />} />
-          <Route path="/enrollments" element={<EnrollmentQueueRoute />} />
+          <Route path="/enrollments" element={<EnrolledRoute />} />
           <Route path="/cancelled" element={<StudentListPage title="Cancelled" view="cancelled" emptyText="No cancellations." />} />
 
           <Route

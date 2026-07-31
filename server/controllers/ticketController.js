@@ -47,6 +47,28 @@ export async function listTickets(req, res) {
   }
 }
 
+function buildTicketFilter(req) {
+  const dept = getAllowedDepartment(req.user);
+  const query = {
+    status: { $in: ["Active", "RESOLVED"] },
+  };
+  if (dept) {
+    query.assignedDepartment = dept;
+  }
+  return query;
+}
+
+export async function ticketSummary(req, res) {
+  try {
+    const query = buildTicketFilter(req);
+    const total = await Ticket.countDocuments(query);
+    res.json({ total });
+  } catch (error) {
+    console.error("Error in ticketSummary:", error);
+    res.status(500).json({ message: "Error computing ticket summary" });
+  }
+}
+
 // 2. Get Single Ticket by Ticket ID
 export async function getTicket(req, res) {
   try {

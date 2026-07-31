@@ -8,6 +8,7 @@ import Module from "./models/Module.js";
 import Role from "./models/Role.js";
 import { DEFAULT_MODULE_SEED } from "./utils/permissions.js";
 import { ensureDefaultRoles } from "./utils/roles.js";
+import { getAncestorManagerIds } from "./utils/hierarchy.js";
 
 const normalizeName = (value = "") => String(value).trim().toLowerCase().replace(/[\s._-]+/g, "");
 
@@ -86,6 +87,35 @@ async function run() {
     console.log(
       `  -> ${unmigrated.length - migrated} user(s) could not be matched to any existing Role - their designation no longer matches a Role name. Re-assign their Role from Settings -> Users.`
     );
+  }
+
+  console.log("Backfilling reportingHierarchyIds for existing students...");
+  const studentsToMigrate = await Student.find({
+    $or: [
+      { reportingHierarchyIds: { $exists: false } },
+      { reportingHierarchyIds: null },
+      { reportingHierarchyIds: { $size: 0 } },
+    ]
+  });
+
+  let studentsMigrated = 0;
+  for (const student of studentsToMigrate) {
+    let hierarchyIds = [];
+    if (student.reportedToId) {
+      const ancestors = await getAncestorManagerIds(student.reportedToId);
+      hierarchyIds = [new mongoose.Types.ObjectId(String(student.reportedToId)), ...ancestors];
+    } else if (student.createdById) {
+      hierarchyIds = await getAncestorManagerIds(student.createdById);
+    }
+    
+    if (hierarchyIds.length > 0) {
+      student.reportingHierarchyIds = hierarchyIds;
+      await student.save();
+      studentsMigrated += 1;
+    }
+  }
+  if (studentsMigrated > 0) {
+    console.log(`  -> backfilled reportingHierarchyIds for ${studentsMigrated} student(s).`);
   }
 
   console.log("Done. Log in with phone 9998887766 + password: skillit@123");

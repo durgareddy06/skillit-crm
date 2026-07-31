@@ -11,19 +11,32 @@ export default function FilterBar({ filters = [], values = {}, onChange, onAdvan
   return (
     <div className="mb-4">
       <div className="flex flex-nowrap items-center gap-3 overflow-x-auto pb-1">
-        {filters.map((f) => (
-          <Select
-            key={f.key}
-            value={values[f.key] || ""}
-            onChange={(e) => onChange(f.key, e.target.value)}
-            className={`${f.wide ? widths.wide : widths.select} !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]`}
-          >
-            <option value="">{f.label}</option>
-            {f.options.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </Select>
-        ))}
+        {filters.map((f) => {
+          if (f.type === "text") {
+            return (
+              <Input
+                key={f.key}
+                placeholder={f.label}
+                value={values[f.key] || ""}
+                onChange={(e) => onChange(f.key, e.target.value)}
+                className={`${f.wide ? widths.wide : widths.select} !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]`}
+              />
+            );
+          }
+          return (
+            <Select
+              key={f.key}
+              value={values[f.key] || ""}
+              onChange={(e) => onChange(f.key, e.target.value)}
+              className={`${f.wide ? widths.wide : widths.select} !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]`}
+            >
+              <option value="">{f.label}</option>
+              {f.options?.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </Select>
+          );
+        })}
 
         <button
           type="button"

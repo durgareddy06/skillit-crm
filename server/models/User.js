@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema(
     dateOfJoining: { type: String, default: "" },
     department: { type: String, default: "" },
     appAccess: { type: Boolean, default: false },
-    status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
+    status: { type: String, enum: ["Active", "Inactive", "Archived"], default: "Active" },
     loginAttempts: { type: Number, default: 0 },
     createdBy: { type: String, default: "" },
     updatedBy: { type: String, default: "" },

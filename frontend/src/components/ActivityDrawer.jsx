@@ -109,29 +109,41 @@ export default function ActivityDrawer({ open, student, onClose, defaultTab = "a
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
             {activeTab === "all" ? (
-              <div className="space-y-8">
-                {feed.all.map((item, idx) => (
-                  <section key={idx} className={idx !== feed.all.length - 1 ? "border-b border-slate-100" : ""}>
-                    <SectionCard item={item} />
-                  </section>
-                ))}
-              </div>
+              feed.all.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-10">No activity recorded yet.</p>
+              ) : (
+                <div className="space-y-8">
+                  {feed.all.map((item, idx) => (
+                    <section key={idx} className={idx !== feed.all.length - 1 ? "border-b border-slate-100" : ""}>
+                      <SectionCard item={item} />
+                    </section>
+                  ))}
+                </div>
+              )
             ) : activeTab === "callLogs" ? (
-              <div className="space-y-6">
-                {currentItems.map((item, idx) => (
-                  <section key={idx} className={idx !== currentItems.length - 1 ? "border-b border-slate-200 pb-5" : ""}>
-                    <SectionCard item={item} />
-                  </section>
-                ))}
-              </div>
+              currentItems.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-10">No call logs available.</p>
+              ) : (
+                <div className="space-y-6">
+                  {currentItems.map((item, idx) => (
+                    <section key={idx} className={idx !== currentItems.length - 1 ? "border-b border-slate-200 pb-5" : ""}>
+                      <SectionCard item={item} />
+                    </section>
+                  ))}
+                </div>
+              )
             ) : (
-              <div className="space-y-8">
-                {currentItems.map((item, idx) => (
-                  <section key={idx} className={idx !== currentItems.length - 1 ? "border-b border-slate-100" : ""}>
-                    <SectionCard item={item} />
-                  </section>
-                ))}
-              </div>
+              currentItems.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-10">No entries yet.</p>
+              ) : (
+                <div className="space-y-8">
+                  {currentItems.map((item, idx) => (
+                    <section key={idx} className={idx !== currentItems.length - 1 ? "border-b border-slate-100" : ""}>
+                      <SectionCard item={item} />
+                    </section>
+                  ))}
+                </div>
+              )
             )}
           </div>
         </div>

@@ -2,6 +2,9 @@ import React, { forwardRef, useImperativeHandle, useMemo, useState } from "react
 import DataTable from "../DataTable";
 import CreateRoleModal from "./CreateRoleModal";
 import RolePermissionsEditor from "./RolePermissionsEditor";
+import Modal from "../Modal";
+import Button from "../Button";
+import { Field, Select } from "../Field";
 import * as adminApi from "../../api/admin";
 import { useAuth } from "../../context/AuthContext";
 
@@ -21,6 +24,11 @@ const RolesTab = forwardRef(function RolesTab({ roles, loading, search, onRefres
   const { refreshUser } = useAuth();
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
+
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [transferringRole, setTransferringRole] = useState(null);
+  const [destRoleId, setDestRoleId] = useState("");
+  const [transferLoading, setTransferLoading] = useState(false);
 
   useImperativeHandle(ref, () => ({ openCreate: () => setCreateOpen(true) }));
 
@@ -60,10 +68,40 @@ const RolesTab = forwardRef(function RolesTab({ roles, loading, search, onRefres
   };
 
   const handleDelete = async (r) => {
+    if (r.userCount > 0) {
+      setTransferringRole(r);
+      const otherRoles = roles.filter((role) => role.id !== r.id);
+      setDestRoleId(otherRoles[0]?.id || "");
+      setTransferModalOpen(true);
+      return;
+    }
+
     if (!window.confirm(`Delete role "${r.name}"?`)) return;
-    await adminApi.deleteRole(r.id);
-    onRefresh();
-    signalPermissionRefresh();
+    try {
+      await adminApi.deleteRole(r.id);
+      onRefresh();
+      signalPermissionRefresh();
+    } catch (error) {
+      window.alert(error?.response?.data?.message || "Unable to delete role.");
+    }
+  };
+
+  const handleTransferAndConfirm = async () => {
+    if (!destRoleId) return;
+    setTransferLoading(true);
+    try {
+      await adminApi.transferRoleUsers(transferringRole.id, destRoleId);
+      await adminApi.deleteRole(transferringRole.id);
+      setTransferModalOpen(false);
+      setTransferringRole(null);
+      onRefresh();
+      signalPermissionRefresh();
+      await refreshUser();
+    } catch (error) {
+      window.alert(error?.response?.data?.message || "Unable to transfer users and delete role.");
+    } finally {
+      setTransferLoading(false);
+    }
   };
 
   if (editingRole) {
@@ -110,6 +148,55 @@ const RolesTab = forwardRef(function RolesTab({ roles, loading, search, onRefres
       />
 
       <CreateRoleModal open={createOpen} onClose={() => setCreateOpen(false)} onSave={handleCreate} />
+
+      <Modal
+        open={transferModalOpen}
+        onClose={() => !transferLoading && setTransferModalOpen(false)}
+        title="Transfer Users"
+      >
+        <div className="space-y-5">
+          <p className="text-sm text-slate-600 leading-relaxed">
+            This role cannot be deleted because users are still assigned to it. Please reassign all users to another role before deleting this role.
+          </p>
+
+          <Field label="Destination Role" required>
+            <Select
+              value={destRoleId}
+              onChange={(e) => setDestRoleId(e.target.value)}
+              disabled={transferLoading}
+            >
+              <option value="" disabled>Select a role...</option>
+              {roles
+                .filter((role) => role.id !== transferringRole?.id)
+                .map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.name} ({role.userCount || 0} users)
+                  </option>
+                ))}
+            </Select>
+          </Field>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setTransferModalOpen(false)}
+              disabled={transferLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={handleTransferAndConfirm}
+              loading={transferLoading}
+              disabled={!destRoleId}
+            >
+              Transfer Users
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 });

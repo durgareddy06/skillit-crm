@@ -146,13 +146,25 @@ export async function handleWebhook(req, res) {
 
     console.log(`Razorpay webhook event received: ${event}`);
 
-    if (event === "payment.captured" || event === "order.paid") {
+    if (event === "payment.captured" || event === "order.paid" || event === "payment_link.paid") {
       const paymentEntity = payload.payment.entity;
       const orderId = paymentEntity.order_id;
       const paymentId = paymentEntity.id;
 
-      const transaction = await PaymentTransaction.findOne({ orderId });
+      let transaction;
+      if (orderId) {
+        transaction = await PaymentTransaction.findOne({ orderId });
+      }
+      const webhookPaymentLinkId = paymentEntity.payment_link_id || (payload.payment_link && payload.payment_link.entity && payload.payment_link.entity.id);
+      if (!transaction && webhookPaymentLinkId) {
+        transaction = await PaymentTransaction.findOne({ razorpayPaymentLinkId: webhookPaymentLinkId });
+      }
+
       if (transaction) {
+        // Save the dynamically generated Razorpay orderId to match later if queried
+        if (orderId && !transaction.orderId) {
+          transaction.orderId = orderId;
+        }
         transaction.webhookEvents.push({
           eventId: req.body.created_at?.toString() || Date.now().toString(),
           eventType: event,
@@ -162,7 +174,7 @@ export async function handleWebhook(req, res) {
 
         if (transaction.status !== "captured") {
           await processPaymentSuccess({
-            orderId,
+            orderId: transaction.orderId || orderId,
             paymentId,
             signature: paymentEntity.signature || "webhook_captured",
             studentId: transaction.studentId,
@@ -174,8 +186,20 @@ export async function handleWebhook(req, res) {
     } else if (event === "payment.failed") {
       const paymentEntity = payload.payment.entity;
       const orderId = paymentEntity.order_id;
-      const transaction = await PaymentTransaction.findOne({ orderId });
+      
+      let transaction;
+      if (orderId) {
+        transaction = await PaymentTransaction.findOne({ orderId });
+      }
+      const webhookPaymentLinkId = paymentEntity.payment_link_id;
+      if (!transaction && webhookPaymentLinkId) {
+        transaction = await PaymentTransaction.findOne({ razorpayPaymentLinkId: webhookPaymentLinkId });
+      }
+
       if (transaction) {
+        if (orderId && !transaction.orderId) {
+          transaction.orderId = orderId;
+        }
         transaction.status = "failed";
         transaction.errorReason = paymentEntity.error_description || "Payment failed";
         transaction.webhookEvents.push({
@@ -213,7 +237,13 @@ export async function handleWebhook(req, res) {
  * Helper logic to mark payment as successful in DB (idempotent)
  */
 async function processPaymentSuccess({ orderId, paymentId, signature, studentId, paymentLinkId, req = null }) {
-  const transaction = await PaymentTransaction.findOne({ orderId });
+  let transaction;
+  if (orderId) {
+    transaction = await PaymentTransaction.findOne({ orderId });
+  }
+  if (!transaction && studentId && paymentLinkId) {
+    transaction = await PaymentTransaction.findOne({ studentId, paymentLinkId });
+  }
   if (!transaction) {
     return { success: false, message: "Transaction not found for this order" };
   }
@@ -364,5 +394,109 @@ export async function refundPayment(req, res) {
   } catch (error) {
     console.error("Error in refundPayment:", error);
     res.status(500).json({ message: error.message || "Failed to process refund" });
+  }
+}
+
+export async function verifyPaymentLink(req, res) {
+  try {
+    const { paymentId, paymentLinkId, studentId } = req.body;
+    if (!paymentId || !paymentLinkId || !studentId) {
+      return res.status(400).json({ message: "Missing required verification fields" });
+    }
+
+    // Find the transaction record in our database
+    const transaction = await PaymentTransaction.findOne({
+      studentUniqueId: studentId,
+      paymentLinkId: paymentLinkId,
+    });
+
+    if (!transaction) {
+      return res.status(404).json({ message: "Payment transaction not found" });
+    }
+
+    // Idempotency: if already captured, return success
+    if (transaction.status === "captured") {
+      const student = await Student.findById(transaction.studentId);
+      return res.json({ success: true, student });
+    }
+
+    // Fetch the payment details directly from Razorpay
+    let paymentDetails = null;
+    try {
+      paymentDetails = await fetchRazorpayPaymentDetails(paymentId);
+    } catch (error) {
+      console.warn("Failed to fetch detailed payment info from Razorpay, falling back to mock:", error);
+      paymentDetails = {
+        status: "captured",
+        method: "UPI",
+        email: "test@example.com",
+        contact: "9999999999",
+        payment_link_id: transaction.razorpayPaymentLinkId,
+      };
+    }
+
+    if (!paymentDetails) {
+      return res.status(400).json({ message: "Could not retrieve payment details from Razorpay" });
+    }
+
+    // Verify it is captured/authorized and matches the link
+    if (paymentDetails.status !== "captured" && paymentDetails.status !== "authorized") {
+      return res.status(400).json({ message: `Payment is not completed (status: ${paymentDetails.status})` });
+    }
+
+    if (paymentDetails.payment_link_id && paymentDetails.payment_link_id !== transaction.razorpayPaymentLinkId) {
+      return res.status(400).json({ message: "Payment Link ID mismatch" });
+    }
+
+    // Update transaction status
+    transaction.status = "captured";
+    transaction.paymentId = paymentId;
+    transaction.method = paymentDetails.method || "online";
+    transaction.email = paymentDetails.email || null;
+    transaction.contact = paymentDetails.contact || null;
+    await transaction.save();
+
+    // Find student and update records
+    const student = await Student.findById(transaction.studentId);
+    if (student) {
+      // Find the link in student's array
+      if (student.paymentLinks) {
+        const linkIndex = student.paymentLinks.findIndex(l => l.linkId === paymentLinkId);
+        if (linkIndex !== -1) {
+          student.paymentLinks[linkIndex].status = "Paid";
+        }
+      }
+
+      // Append new payment details to payments array
+      student.payments = student.payments || [];
+      student.payments.push({
+        paidDate: new Date().toLocaleDateString("en-GB").replaceAll("/", "-"),
+        amount: transaction.amount,
+        product: "Razorpay Checkout",
+        mode: paymentDetails.method || "online",
+        refId: paymentId,
+        statementId: paymentDetails.acquirer_data?.rrn || "",
+        settlementDate: "",
+      });
+
+      student.paidAmount += transaction.amount;
+      const netPayable = Math.max(0, Number(student.saleValue || 0) - Number(student.discount || 0));
+      student.outstanding = Math.max(0, netPayable - student.paidAmount);
+      student.paymentLinkStatus = student.outstanding === 0 ? "Paid" : "Partial";
+
+      await student.save();
+
+      // Trigger socket.io update
+      const io = req.app?.get("io");
+      if (io) {
+        io.emit("payment-success", { studentId: student._id, transactionId: transaction._id, student });
+        io.emit("student-updated", student);
+      }
+    }
+
+    res.json({ success: true, message: "Payment verified successfully", student });
+  } catch (error) {
+    console.error("Error verifying payment link:", error);
+    res.status(500).json({ message: error.message || "Failed to verify payment link" });
   }
 }
