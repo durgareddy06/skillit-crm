@@ -49,7 +49,7 @@ export async function login(req, res) {
 
   const user = await User.findOne({ phone: normalizedPhone });
   if (!user) return res.status(401).json({ message: "No account found for this number" });
-  if (user.status !== "Active") {
+  if (user.status !== "Active" && user.role !== "admin") {
     return res.status(403).json({ message: "Your account has been disabled. Please contact your administrator." });
   }
 

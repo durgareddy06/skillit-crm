@@ -29,7 +29,7 @@ export async function requireAuth(req, res, next) {
       .lean();
 
     if (!user) return res.status(401).json({ message: "Account no longer exists" });
-    if (user.status !== "Active") {
+    if (user.status !== "Active" && user.role !== "admin") {
       return res.status(403).json({ message: "Your account has been disabled. Please contact your administrator." });
     }
 
