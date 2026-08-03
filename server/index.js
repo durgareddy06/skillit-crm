@@ -69,3 +69,6 @@ connectDB().then(() => {
     console.log(`SkillIT CRM API running on http://localhost:${PORT}`);
   });
 });
+
+// Restart trigger: updated Razorpay keys in .env
+
