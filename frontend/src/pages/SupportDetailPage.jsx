@@ -118,14 +118,25 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
   }, [id, mode]);
 
   useEffect(() => {
+    if (!student) return;
     setChecks((current) => {
       const next = {};
+      const dbChecks = {};
+      if (Array.isArray(student.onboardingVerifications)) {
+        for (const v of student.onboardingVerifications) {
+          dbChecks[v.item] = v.verified;
+        }
+      }
       for (const item of verificationItems) {
-        next[item] = Boolean(current[item]);
+        if (dbChecks[item] !== undefined) {
+          next[item] = dbChecks[item];
+        } else {
+          next[item] = Boolean(current[item]);
+        }
       }
       return next;
     });
-  }, [verificationItems]);
+  }, [student, verificationItems]);
 
   if (loading || !student) {
     return <p className="text-sm text-slate-400">Loading student...</p>;
@@ -220,6 +231,13 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
           category,
           course: course.trim(),
           batch: batch.trim(),
+          onboardingVerifications: verificationItems.map((item) => ({
+            item,
+            verified: Boolean(checks[item]),
+            verifiedBy: user?.name || "System",
+            verifiedById: user?.id || null,
+            verifiedAt: new Date(),
+          })),
         }, mode);
         // After submit → student disappears from onboarding list (backend filter
         // now excludes onboardingSubmitted: true). Navigate back to the list.
@@ -281,6 +299,13 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
           category,
           course: course.trim(),
           batch: batch.trim(),
+          onboardingVerifications: verificationItems.map((item) => ({
+            item,
+            verified: Boolean(checks[item]),
+            verifiedBy: student.onboardingVerifications?.find(v => v.item === item)?.verifiedBy || user?.name || "System",
+            verifiedById: student.onboardingVerifications?.find(v => v.item === item)?.verifiedById || user?.id || null,
+            verifiedAt: student.onboardingVerifications?.find(v => v.item === item)?.verifiedAt || new Date(),
+          })),
         }, mode);
         navigate("/learners");
       } finally {
@@ -447,6 +472,7 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
                       type="checkbox"
                       checked={Boolean(checks[label])}
                       onChange={(e) => setChecks((c) => ({ ...c, [label]: e.target.checked }))}
+                      disabled={!canPerformAction}
                       className="h-4 w-4 rounded accent-skillit"
                     />
                     <span>

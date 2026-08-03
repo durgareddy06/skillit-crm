@@ -266,6 +266,9 @@ export function getActivityFeed(student) {
         `Batch: ${val(s.batch)}`,
         s.onboardingDate ? `Onboarding Date: ${fmtDate(s.onboardingDate)}` : null,
         s.onboardingComments ? `Verification Comments: ${s.onboardingComments}` : null,
+        ...(Array.isArray(s.onboardingVerifications) ? s.onboardingVerifications.map(v => 
+          `${v.item}: ${v.verified ? "Verified" : "Not Verified"} (by ${val(v.verifiedBy)} on ${fmtDateTime(v.verifiedAt)})`
+        ) : []),
       ].filter(Boolean),
     };
     allItems.push(onboardingEntry);

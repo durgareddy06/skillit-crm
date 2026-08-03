@@ -77,6 +77,18 @@ const studentSchema = new mongoose.Schema(
     orientationCompleted: { type: Boolean, default: false },
     onboardingComments: { type: String, default: "" },
     onboardingDate: { type: String, default: "" },
+    onboardingVerifications: {
+      type: [
+        {
+          item: { type: String, required: true },
+          verified: { type: Boolean, default: false },
+          verifiedBy: { type: String, default: "" },
+          verifiedById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+          verifiedAt: { type: Date, default: null },
+        }
+      ],
+      default: []
+    },
     orientationDate: { type: String, default: "" },
     orientationLink: { type: String, default: "" },
     recordedLink: { type: String, default: "" },
