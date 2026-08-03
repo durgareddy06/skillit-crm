@@ -19,3 +19,6 @@ build/
 Thumbs.db
 .vscode/
 .idea/
+
+# Uploaded assets
+server/uploads/

@@ -9,6 +9,50 @@ const TABS = [
   { key: "onboardings", label: "OnBoardings" },
 ];
 
+function renderLineWithLinks(line) {
+  if (typeof line !== "string") return line;
+
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = line.split(urlRegex);
+
+  if (parts.length === 1) {
+    return <span>{line}</span>;
+  }
+
+  return (
+    <span>
+      {parts.map((part, i) => {
+        if (part.match(urlRegex)) {
+          return (
+            <span key={i} className="inline-flex items-center gap-1.5 ml-1 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-[12px] font-mono">
+              <a
+                href={part}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 underline break-all"
+              >
+                {part}
+              </a>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.clipboard.writeText(part);
+                  alert("Link copied to clipboard!");
+                }}
+                className="inline-flex items-center justify-center px-1 py-0.5 text-slate-400 hover:text-slate-700 bg-white border border-slate-200 rounded text-[9px] font-semibold cursor-pointer"
+                title="Copy Link"
+              >
+                Copy
+              </button>
+            </span>
+          );
+        }
+        return part;
+      })}
+    </span>
+  );
+}
+
 function SectionCard({ item }) {
   return (
     <article className="pb-5">
@@ -23,18 +67,30 @@ function SectionCard({ item }) {
         <ul className="mt-2 space-y-1.5 pl-5 text-[13px] leading-5 text-slate-800 list-disc">
           {item.details.map((line, idx) => (
             <li key={idx} className="break-words">
-              {line}
+              {renderLineWithLinks(line)}
             </li>
           ))}
         </ul>
       )}
 
       {item.audio && (
-        <div className="mt-2 inline-flex items-center gap-2 text-[13px] text-slate-800">
-          <span className="grid h-5 w-5 place-items-center rounded-full bg-slate-800 text-white">
-            <Play className="h-3 w-3 fill-white" />
-          </span>
-          <span className="border-b border-slate-400">{item.audio}</span>
+        <div className="mt-3 space-y-2 w-full">
+          <audio src={item.audio} controls className="w-full h-8 max-w-full rounded-md shadow-sm border border-slate-100 bg-slate-50" />
+          <div className="flex gap-3 text-[11px] text-slate-500 pl-1">
+            <a href={item.audio} target="_blank" rel="noopener noreferrer" className="hover:underline text-blue-600 font-medium">
+              Open Recording URL
+            </a>
+            <span>•</span>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(item.audio);
+                alert("Recording URL copied to clipboard!");
+              }}
+              className="hover:underline text-blue-600 font-medium cursor-pointer"
+            >
+              Copy Recording URL
+            </button>
+          </div>
         </div>
       )}
     </article>

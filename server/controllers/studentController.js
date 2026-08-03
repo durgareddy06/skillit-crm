@@ -143,6 +143,8 @@ const STUDENT_LIST_FIELDS = [
   "onboardingComments",
   "onboardingDate",
   "orientationDate",
+  "onboardingSubmittedAt",
+  "orientationCompletedAt",
   "orientationLink",
   "recordedLink",
   "internalRemarks",
@@ -153,6 +155,8 @@ const STUDENT_LIST_FIELDS = [
   "cancelledAt",
   "misApprovedAt",
   "transferHistory",
+  "onboardingVerifications",
+  "callRecordings",
   "createdAt",
   "createdBy",
   "reportedTo",
@@ -1173,5 +1177,44 @@ export async function getHierarchyFilters(req, res) {
   } catch (error) {
     console.error("Failed to load hierarchy filters:", error);
     res.status(500).json({ message: error.message || "Failed to load hierarchy filters" });
+  }
+}
+
+export async function uploadRecording(req, res) {
+  try {
+    const { id } = req.params;
+    const student = await Student.findOne({ id });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    if (!(await canAccessStudent(req, student))) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "No call recording file provided" });
+    }
+
+    const host = req.get("host");
+    const protocol = req.protocol;
+    const fileUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+
+    const recording = {
+      fileName: req.file.originalname,
+      url: fileUrl,
+      uploadedBy: req.user?.name || "System",
+      uploadedAt: new Date()
+    };
+
+    student.callRecordings = student.callRecordings || [];
+    student.callRecordings.push(recording);
+    await student.save();
+
+    emitStudentUpdate(req, student);
+
+    res.json({ success: true, url: fileUrl, recording });
+  } catch (error) {
+    console.error("Failed to upload call recording:", error);
+    res.status(500).json({ message: "Failed to upload call recording file" });
   }
 }

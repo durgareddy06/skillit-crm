@@ -7,8 +7,27 @@ import {
   listStudents, studentSummary, getStudent, createStudent, generatePaymentLink, addPayment,
   punchOrder, enrollStudent, cancelStudent, misApprove, misCancel, dropStudent, editStudent,
   transferStudent, listTransferTargets, listAllUsers, getPaymentInvoice, getHierarchyFilters,
-  cancelPaymentLink, getPaymentHistory,
+  cancelPaymentLink, getPaymentHistory, uploadRecording,
 } from "../controllers/studentController.js";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+
+// Configure multer storage for call recordings
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadPath = path.join(process.cwd(), "uploads");
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    cb(null, `recording-${Date.now()}${ext}`);
+  }
+});
+const upload = multer({ storage });
 
 import { requestPasswordReset, resetPassword, verifyEmail } from "../controllers/emailController.js";
 
@@ -199,6 +218,7 @@ router.post("/:id/mis-approve", requireActionPermission("mis-approve"), misAppro
 router.post("/:id/mis-cancel", requireActionPermission("mis-escalate"), misCancel);
 router.post("/:id/drop", requireActionPermission("drop-student"), dropStudent);
 router.patch("/:id", requireActionPermission("edit-student"), editStudent);
+router.post("/:id/upload-recording", requireActionPermission("edit-student"), upload.single("recording"), uploadRecording);
 
 // Lead Transfer — hierarchy-validated on the backend (see
 // utils/hierarchy.js canAssignToUser). Reachable from both the Student row

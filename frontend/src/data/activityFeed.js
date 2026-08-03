@@ -14,8 +14,13 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  */
 function fmtDateTime(raw) {
   if (!raw) return "";
-  // en-GB locale format: "24/07/2026, 12:34:56"
-  const gbMatch = String(raw).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{2}:\d{2})/);
+  const str = String(raw).trim();
+  if (str.includes("AM") || str.includes("PM")) {
+    return str;
+  }
+  
+  // en-GB locale format: "24/07/2026, 12:34:56" or "24/7/2026, 12:34:56"
+  const gbMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}:\d{2})/);
   if (gbMatch) {
     const [, day, month, year, time] = gbMatch;
     const [hh, mm] = time.split(":");
@@ -24,22 +29,53 @@ function fmtDateTime(raw) {
     const h12 = h % 12 || 12;
     return `${day} ${MONTHS[Number(month) - 1]} ${year} - ${h12}:${mm}${ampm}`;
   }
+  
   // ISO: "2026-07-24T12:34:56.000Z"
-  const isoMatch = String(raw).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
   if (isoMatch) {
     const [, year, month, day, hh, mm] = isoMatch;
     const h = Number(hh);
     const ampm = h >= 12 ? "PM" : "AM";
     const h12 = h % 12 || 12;
-    return `${day} ${MONTHS[Number(month) - 1]} ${year} - ${h12}:${mm}${ampm}`;
+    return `${Number(day)} ${MONTHS[Number(month) - 1]} ${year} - ${h12}:${mm}${ampm}`;
   }
+  
   // DD-MM-YYYY (legacy stored date)
-  const legacyMatch = String(raw).match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  const legacyMatch = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
   if (legacyMatch) {
     const [, day, month, year] = legacyMatch;
-    return `${day} ${MONTHS[Number(month) - 1]} ${year}`;
+    return `${Number(day)} ${MONTHS[Number(month) - 1]} ${year}`;
   }
-  return String(raw);
+
+  // YYYY-MM-DD
+  const isoDateMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateMatch) {
+    const [, year, month, day] = isoDateMatch;
+    return `${Number(day)} ${MONTHS[Number(month) - 1]} ${year}`;
+  }
+  
+  // Try Javascript Date parsing
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    const day = parsed.getDate();
+    const month = parsed.getMonth();
+    const year = parsed.getFullYear();
+    const h = parsed.getHours();
+    const mm = String(parsed.getMinutes()).padStart(2, "0");
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = h % 12 || 12;
+    if (h === 0 && mm === "00") {
+      return `${day} ${MONTHS[month]} ${year}`;
+    }
+    return `${day} ${MONTHS[month]} ${year} - ${h12}:${mm}${ampm}`;
+  }
+  
+  return str;
+}
+
+function timeLabel(raw, prefix = "Exact Time") {
+  const formatted = fmtDateTime(raw);
+  return formatted ? `${prefix}: ${formatted}` : null;
 }
 
 /** Format a plain date string (YYYY-MM-DD or DD-MM-YYYY) to "24 Jul 2026" */
@@ -99,6 +135,7 @@ export function getActivityFeed(student) {
         `Course Fee: ${fmtMoney(s.saleValue)}`,
         s.sdeName ? `SDE: ${s.sdeName}` : null,
         s.manager ? `Manager: ${s.manager}` : null,
+        timeLabel(s.createdAt),
       ].filter(Boolean),
     });
   }
@@ -125,6 +162,7 @@ export function getActivityFeed(student) {
         `Status: ${val(link.status, "Pending")}`,
         link.createdAt ? `Created On: ${fmtDateTime(link.createdAt)}` : null,
         link.url ? `Link: ${link.url}` : null,
+        timeLabel(link.createdAt),
       ].filter(Boolean),
     };
     allItems.push(entry);
@@ -152,6 +190,7 @@ export function getActivityFeed(student) {
         p.refId ? `Reference ID: ${p.refId}` : null,
         p.paidDate ? `Transaction Date: ${fmtDateTime(p.paidDate)}` : null,
         `Outstanding updated from ${fmtMoney(prevOutstanding)} to ${fmtMoney(newOutstanding)}`,
+        timeLabel(p.paidDate),
       ].filter(Boolean),
     };
     allItems.push(entry);
@@ -178,6 +217,7 @@ export function getActivityFeed(student) {
         s.demoDoneBy ? `Demo Done By: ${s.demoDoneBy}` : null,
         `SDE: ${sdeName}`,
         `Manager: ${managerName}`,
+        timeLabel(s.orderPunchedAt),
       ].filter(Boolean),
     });
   }
@@ -191,6 +231,7 @@ export function getActivityFeed(student) {
         `Status changed to Enrolled`,
         `Course: ${val(s.course || s.program)}`,
         `Batch: ${val(s.batch)}`,
+        timeLabel(s.enrolledAt),
       ],
     });
   }
@@ -198,11 +239,12 @@ export function getActivityFeed(student) {
   // ── 5a. Cancelled ───────────────────────────────────────────────────────────
   if (s.status === "Cancelled" && s.cancelledAt) {
     allItems.push({
-      title: `Student Registration Cancelled`,
+      title: `Student Registration Cancelled by ${managerName}`,
       at: fmtDateTime(s.cancelledAt),
       details: [
         `Status changed to Cancelled`,
         s.internalRemarks ? `Remarks: ${s.internalRemarks}` : null,
+        timeLabel(s.cancelledAt),
       ].filter(Boolean),
     });
   }
@@ -210,11 +252,12 @@ export function getActivityFeed(student) {
   // ── 5b. Dropped ─────────────────────────────────────────────────────────────
   if (s.dropped && s.droppedAt) {
     allItems.push({
-      title: `Student Dropped from Program`,
+      title: `Student Dropped from Program by ${managerName}`,
       at: fmtDateTime(s.droppedAt),
       details: [
         `Status changed to Dropped`,
         s.internalRemarks ? `Remarks: ${s.internalRemarks}` : null,
+        timeLabel(s.droppedAt),
       ].filter(Boolean),
     });
   }
@@ -231,7 +274,7 @@ export function getActivityFeed(student) {
         details: [
           `Transferred from: ${fromName}`,
           `Transferred to: ${toName}`,
-          `Transferred on: ${fmtDateTime(t.transferredAt)}`,
+          timeLabel(t.transferredAt),
         ],
       });
     }
@@ -240,11 +283,12 @@ export function getActivityFeed(student) {
   // ── 6. MIS Approved ───────────────────────────────────────────────────────
   if (s.misStatus === "approved" && s.misApprovedAt) {
     allItems.push({
-      title: `MIS Approved`,
+      title: `MIS Approved by ${managerName}`,
       at: fmtDateTime(s.misApprovedAt),
       details: [
         "MIS checklist reviewed and approved",
         s.internalRemarks ? `Remarks: ${s.internalRemarks}` : "No internal remarks",
+        timeLabel(s.misApprovedAt),
       ],
     });
   }
@@ -269,6 +313,7 @@ export function getActivityFeed(student) {
         ...(Array.isArray(s.onboardingVerifications) ? s.onboardingVerifications.map(v => 
           `${v.item}: ${v.verified ? "Verified" : "Not Verified"} (by ${val(v.verifiedBy)} on ${fmtDateTime(v.verifiedAt)})`
         ) : []),
+        timeLabel(s.onboardingSubmittedAt || s.onboardingDate || s.createdAt),
       ].filter(Boolean),
     };
     allItems.push(onboardingEntry);
@@ -285,15 +330,38 @@ export function getActivityFeed(student) {
         s.orientationLink ? `Orientation Link: ${s.orientationLink}` : null,
         s.recordedLink ? `Recorded Link: ${s.recordedLink}` : null,
         s.internalRemarks ? `Internal Remarks: ${s.internalRemarks}` : null,
+        timeLabel(s.orientationCompletedAt || s.orientationDate),
       ].filter(Boolean),
     };
     allItems.push(orientationEntry);
     onboardingItems.push(orientationEntry);
   }
 
-  // ── Call Logs (no real data stored yet — show empty state gracefully) ──────
-  // When a call-log API is integrated, replace this with real data.
-  const callLogs = [];
+  // ── Call Logs ──────────────────────────────────────────────────────────────
+  const callLogs = (s.callRecordings || []).map((rec) => {
+    return {
+      title: `Call Recording Uploaded by ${val(rec.uploadedBy, "System")}`,
+      at: fmtDateTime(rec.uploadedAt),
+      timestamp: rec.uploadedAt ? new Date(rec.uploadedAt) : new Date(),
+      audio: rec.url,
+      details: [
+        `File Name: ${val(rec.fileName, "recording.mp3")}`,
+        `Uploaded By: ${val(rec.uploadedBy, "System")}`,
+        timeLabel(rec.uploadedAt),
+      ]
+    };
+  });
+
+  // Assign raw timestamps to existing items in allItems so we can sort them
+  for (const item of allItems) {
+    if (!item.timestamp) {
+      const parsed = item.at ? new Date(item.at) : null;
+      item.timestamp = parsed && !isNaN(parsed.getTime()) ? parsed : new Date(0);
+    }
+  }
+
+  allItems.push(...callLogs);
+  allItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
   return {
     all: allItems,

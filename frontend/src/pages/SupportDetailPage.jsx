@@ -5,7 +5,7 @@ import Topbar from "../components/Topbar";
 import Button from "../components/Button";
 import PaymentHistoryDrawer from "../components/PaymentHistoryDrawer";
 import { Field, Input, Select, Textarea, formatPhoneDisplay, todayDateInputValue, PhoneInput } from "../components/Field";
-import { getStudent, updateStudent } from "../api/students";
+import { getStudent, updateStudent, uploadCallRecording } from "../api/students";
 import { useAuth } from "../context/AuthContext";
 import { hasPermission } from "../lib/permissions";
 import { useModuleConfig } from "../hooks/useModuleConfig";
@@ -54,6 +54,7 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
   // Onboarding form state (so we can read values on submit)
   const [comments, setComments] = useState("");
   const [onboardingDate, setOnboardingDate] = useState("");
+  const [recordingFile, setRecordingFile] = useState(null);
 
   // Orientation form state
   const [orientationDate, setOrientationDate] = useState("");
@@ -211,8 +212,25 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
         return;
       }
 
+      if (!recordingFile) {
+        setValidationError("Call Recording file is required.");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
       setSaving(true);
       try {
+        if (recordingFile) {
+          try {
+            await uploadCallRecording(student.id, recordingFile);
+          } catch (uploadErr) {
+            console.error("Failed to upload call recording:", uploadErr);
+            setValidationError("Failed to upload call recording file. Please try again.");
+            setSaving(false);
+            return;
+          }
+        }
+
         await updateStudent(student.id, {
           onboardingSubmitted: true,
           onboardingComments: comments.trim(),
@@ -518,13 +536,15 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
                   required={mode === "onboarding"}
                 />
               </Field>
-              <Field label="Call Recording Upload">
+              <Field label="Call Recording Upload" required={mode === "onboarding"}>
                 <input
                   type="file"
                   accept=".mp3,.wav"
+                  onChange={(e) => setRecordingFile(e.target.files[0])}
+                  disabled={!canPerformAction}
                   className="text-sm text-slate-500"
                 />
-                <p className="mt-1 text-xs text-slate-400">Optional · Accepted formats: .mp3, .wav</p>
+                <p className="mt-1 text-xs text-slate-400">Required · Accepted formats: .mp3, .wav</p>
               </Field>
             </div>
           </Section>

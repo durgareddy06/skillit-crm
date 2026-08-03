@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import path from "path";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { connectDB } from "./config/db.js";
@@ -48,6 +49,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/emails", emailRoutes);
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // Retain alias paths to ensure simulation buttons in frontend testing environments continue to operate natively
 app.use("/api/webhooks", emailRoutes);

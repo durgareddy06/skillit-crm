@@ -89,6 +89,17 @@ const studentSchema = new mongoose.Schema(
       ],
       default: []
     },
+    callRecordings: {
+      type: [
+        {
+          fileName: { type: String, default: "" },
+          url: { type: String, required: true },
+          uploadedBy: { type: String, default: "" },
+          uploadedAt: { type: Date, default: Date.now },
+        }
+      ],
+      default: []
+    },
     orientationDate: { type: String, default: "" },
     orientationLink: { type: String, default: "" },
     recordedLink: { type: String, default: "" },
