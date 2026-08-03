@@ -18,14 +18,10 @@ const paymentTransactionSchema = new mongoose.Schema(
     orderId: {
       type: String,
       required: false,
-      unique: true,
-      sparse: true,
       index: true,
     },
     razorpayPaymentLinkId: {
       type: String,
-      unique: true,
-      sparse: true,
       index: true,
     },
     paymentId: {
