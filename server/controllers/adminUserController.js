@@ -194,6 +194,9 @@ export async function updateUser(req, res) {
 
 export async function deleteUser(req, res) {
   const { id } = req.params;
+  if (id === req.user?.id) {
+    return res.status(400).json({ message: "You cannot archive your own Admin account." });
+  }
   const user = await User.findById(id);
   if (!user) return res.status(404).json({ message: "User not found" });
 

@@ -5,6 +5,7 @@ import { Field, Input, Select, PhoneInput, ToggleSwitch, normalizePhone, toDateI
 import { RotateCcw, Trash2, Archive as ArchiveIcon } from "lucide-react";
 import { listRoles } from "../../api/admin";
 import { sortRoles } from "../../config/roles";
+import { useAuth } from "../../context/AuthContext";
 
 function designationKey(value = "") {
   return String(value).trim().toLowerCase().replace(/\s+/g, "").replace(/\./g, "");
@@ -21,6 +22,7 @@ const emptyForm = {
 };
 
 export default function UserFormModal({ open, onClose, onSave, onArchive, onResetPassword, onResetLoginAttempts, user, managers = [] }) {
+  const { user: currentUser } = useAuth();
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [roles, setRoles] = useState([]);
@@ -114,9 +116,11 @@ export default function UserFormModal({ open, onClose, onSave, onArchive, onRese
                 >
                   {user.status === "Active" ? "Inactive" : "Active"}
                 </Button>
-                <Button variant="danger" onClick={() => onArchive?.(user)}>
-                  <ArchiveIcon className="h-4 w-4" /> Archive
-                </Button>
+                {user?.id !== currentUser?.id && (
+                  <Button variant="danger" onClick={() => onArchive?.(user)}>
+                    <ArchiveIcon className="h-4 w-4" /> Archive
+                  </Button>
+                )}
               </>
             )}
             <button onClick={onClose} className="h-8 w-8 rounded-full grid place-items-center text-slate-400 hover:bg-slate-100 hover:text-slate-700">x</button>

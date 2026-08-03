@@ -2,6 +2,7 @@ import React, { forwardRef, useImperativeHandle, useMemo, useState } from "react
 import DataTable from "../DataTable";
 import UserFormModal from "./UserFormModal";
 import * as adminApi from "../../api/admin";
+import { useAuth } from "../../context/AuthContext";
 
 const ROLE_PILL_COLORS = [
   "bg-indigo-100 text-indigo-700",
@@ -19,6 +20,7 @@ function pillColor(label = "") {
 }
 
 const UsersTab = forwardRef(function UsersTab({ users, loading, search, onRefresh }, ref) {
+  const { user: currentUser } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
 
@@ -97,10 +99,13 @@ const UsersTab = forwardRef(function UsersTab({ users, loading, search, onRefres
         rows={filtered}
         tableLayout="auto"
         emptyText={loading ? "Loading users…" : "No users yet. Use the + button to create one."}
-        rowMenu={(r) => [
-          { label: "Edit", onClick: () => openEdit(r) },
-          { label: "Archive", onClick: () => handleArchive(r) },
-        ]}
+        rowMenu={(r) => {
+          const menu = [{ label: "Edit", onClick: () => openEdit(r) }];
+          if (r.id !== currentUser?.id) {
+            menu.push({ label: "Archive", onClick: () => handleArchive(r) });
+          }
+          return menu;
+        }}
       />
 
       <UserFormModal
