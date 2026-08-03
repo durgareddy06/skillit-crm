@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Mail, Phone, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Mail, Phone, ShieldCheck, CreditCard } from "lucide-react";
 import Topbar from "../components/Topbar";
 import Button from "../components/Button";
-import { Field, Input, Select, Textarea, formatPhoneDisplay, todayDateInputValue } from "../components/Field";
+import PaymentHistoryDrawer from "../components/PaymentHistoryDrawer";
+import { Field, Input, Select, Textarea, formatPhoneDisplay, todayDateInputValue, PhoneInput } from "../components/Field";
 import { getStudent, updateStudent } from "../api/students";
 import { useAuth } from "../context/AuthContext";
 import { hasPermission } from "../lib/permissions";
@@ -62,6 +63,16 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
   const [graduatedBranch, setGraduatedBranch] = useState("");
   const [graduationYear, setGraduationYear] = useState("");
   const [extraValues, setExtraValues] = useState({});
+
+  // Editable student details
+  const [customerName, setCustomerName] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
+  const [altContactNumber, setAltContactNumber] = useState("");
+  const [email, setEmail] = useState("");
+  const [category, setCategory] = useState("");
+  const [course, setCourse] = useState("");
+  const [batch, setBatch] = useState("");
+  const [isPaymentDrawerOpen, setIsPaymentDrawerOpen] = useState(false);
   const { config: moduleConfig } = useModuleConfig(mode === "orientation" ? "orientation" : "onboarding");
   const verificationItems = useMemo(() => {
     const section = findConfigSection(moduleConfig?.verifications || [], "Verification");
@@ -78,12 +89,7 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
     return getFieldItems(section, []);
   }, [moduleConfig]);
 
-  const canPerformAction =
-    mode === "onboarding"
-      ? hasPermission(user, "onboarding", "create")
-      : mode === "orientation"
-        ? hasPermission(user, "orientation", "create")
-        : hasPermission(user, "learners", "update");
+  const canPerformAction = hasPermission(user, mode, "update");
 
   useEffect(() => {
     setLoading(true);
@@ -100,6 +106,13 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
         setGraduatedBranch(s.graduatedBranch || "");
         setGraduationYear(s.graduationYear || "");
         setExtraValues(s.customFields || {});
+        setCustomerName(s.customerName || "");
+        setContactNumber(s.contactNumber || "");
+        setAltContactNumber(s.altContactNumber || s.contactNumber || "");
+        setEmail(s.email || "");
+        setCategory(s.category || "");
+        setCourse(s.course || s.program || "");
+        setBatch(s.batch || "");
       })
       .finally(() => setLoading(false));
   }, [id, mode]);
@@ -147,15 +160,13 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
 
   // ── Validation for the onboarding mode ──────────────────────────────────────
   function validateOnboardingForm() {
-    // Student Details — all are read-only from the database; we just check
-    // that the data is present (they should be, but guard anyway).
     const missingStudentDetail =
-      !student.customerName ||
-      !student.contactNumber ||
-      !student.email;
+      !customerName.trim() ||
+      !contactNumber.trim() ||
+      !email.trim();
 
     if (missingStudentDetail) {
-      return "Student Details are incomplete. Please update the student record first.";
+      return "Student Details (Name, Phone Number, and Email Address) are incomplete.";
     }
 
     // Verification — all 3 checkboxes must be checked
@@ -202,6 +213,13 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
           orientationLink: orientationLink.trim() || student.orientationLink || "",
           recordedLink: recordedLink.trim() || student.recordedLink || "",
           internalRemarks: internalRemarks.trim() || student.internalRemarks || "",
+          customerName: customerName.trim(),
+          contactNumber: contactNumber.trim(),
+          altContactNumber: altContactNumber.trim(),
+          email: email.trim(),
+          category,
+          course: course.trim(),
+          batch: batch.trim(),
         }, mode);
         // After submit → student disappears from onboarding list (backend filter
         // now excludes onboardingSubmitted: true). Navigate back to the list.
@@ -213,6 +231,12 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
     }
 
     if (mode === "orientation") {
+      if (!customerName.trim() || !contactNumber.trim() || !email.trim()) {
+        setValidationError("Student Details (Name, Phone Number, and Email Address) are required.");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
       setSaving(true);
       try {
         await updateStudent(student.id, {
@@ -222,6 +246,13 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
           recordedLink: recordedLink.trim(),
           internalRemarks: internalRemarks.trim(),
           customFields: extraValues,
+          customerName: customerName.trim(),
+          contactNumber: contactNumber.trim(),
+          altContactNumber: altContactNumber.trim(),
+          email: email.trim(),
+          category,
+          course: course.trim(),
+          batch: batch.trim(),
         }, mode);
         navigate("/learners");
       } finally {
@@ -230,7 +261,33 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
       return;
     }
 
-    alert(`${actionLabel} (demo).`);
+    if (mode === "learners") {
+      if (!customerName.trim() || !contactNumber.trim() || !email.trim()) {
+        setValidationError("Student Details (Name, Phone Number, and Email Address) are required.");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
+      setSaving(true);
+      try {
+        await updateStudent(student.id, {
+          graduatedBranch: graduatedBranch.trim(),
+          graduationYear: graduationYear.trim(),
+          customFields: extraValues,
+          customerName: customerName.trim(),
+          contactNumber: contactNumber.trim(),
+          altContactNumber: altContactNumber.trim(),
+          email: email.trim(),
+          category,
+          course: course.trim(),
+          batch: batch.trim(),
+        }, mode);
+        navigate("/learners");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
   };
 
   return (
@@ -246,17 +303,27 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
             <ArrowLeft className="h-4 w-4" />
           </button>
         )}
-        title={student.customerName}
-        subtitle={subtitle}
+        title={customerName || student.customerName}
+        subtitle={`Skillit Academy | ${contactNumber || "8639191169"} | Program | ${course || student.program || student.course || "-"}`}
         subtitleExtras={(
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-white/90 data-font">
             <span className="flex items-center gap-1.5">
-              <Phone className="h-4 w-4" /> {formatPhoneDisplay(student.contactNumber)}
+              <Phone className="h-4 w-4" /> {formatPhoneDisplay(contactNumber)}
             </span>
             <span className="flex items-center gap-1.5">
-              <Mail className="h-4 w-4" /> {student.email || "-"}
+              <Mail className="h-4 w-4" /> {email || "-"}
             </span>
           </div>
+        )}
+        right={mode === "onboarding" && (
+          <Button
+            type="button"
+            variant="outline"
+            className="bg-white/15 text-white border-white/20 hover:bg-white/25 hover:text-white flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl"
+            onClick={() => setIsPaymentDrawerOpen(true)}
+          >
+            <CreditCard className="h-4 w-4" /> Payments
+          </Button>
         )}
       />
 
@@ -285,16 +352,33 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
         >
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Full Name" required={mode === "onboarding"}>
-              <Input value={student.customerName || ""} readOnly />
+              <Input
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                readOnly={!canPerformAction}
+              />
             </Field>
             <Field label="Phone Number" required={mode === "onboarding"}>
-              <Input value={formatPhoneDisplay(student.contactNumber)} readOnly />
+              <PhoneInput
+                value={contactNumber}
+                onChange={(e) => setContactNumber(e.target.value)}
+                disabled={!canPerformAction}
+              />
             </Field>
             <Field label="WhatsApp Number" required={mode === "onboarding"}>
-              <Input value={formatPhoneDisplay(student.altContactNumber || student.contactNumber)} readOnly />
+              <PhoneInput
+                value={altContactNumber}
+                onChange={(e) => setAltContactNumber(e.target.value)}
+                disabled={!canPerformAction}
+              />
             </Field>
             <Field label="Email Address" required={mode === "onboarding"}>
-              <Input value={student.email || ""} readOnly />
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                readOnly={!canPerformAction}
+              />
             </Field>
             <Field label="Graduated In / Branch" required={mode === "onboarding"}>
               <Input
@@ -302,6 +386,7 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
                 onChange={(e) => setGraduatedBranch(e.target.value)}
                 placeholder="e.g. B.Tech – Computer Science"
                 required={mode === "onboarding"}
+                readOnly={!canPerformAction}
               />
             </Field>
             <Field label="Graduation Year" required={mode === "onboarding"}>
@@ -312,11 +397,17 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
                 inputMode="numeric"
                 maxLength={4}
                 required={mode === "onboarding"}
+                readOnly={!canPerformAction}
               />
             </Field>
             <Field label="Category" required={mode === "onboarding"}>
-              <Select value={student.category || ""} disabled className="opacity-100">
-                {[...new Set([...(CATEGORY_OPTIONS || []), student.category].filter(Boolean))].map((option) => (
+              <Select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                disabled={!canPerformAction}
+                className="opacity-100"
+              >
+                {[...new Set([...(CATEGORY_OPTIONS || []), category].filter(Boolean))].map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
@@ -324,10 +415,18 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
               </Select>
             </Field>
             <Field label="Course" required={mode === "onboarding"}>
-              <Input value={student.course || student.program || ""} readOnly />
+              <Input
+                value={course}
+                onChange={(e) => setCourse(e.target.value)}
+                readOnly={!canPerformAction}
+              />
             </Field>
             <Field label="Batch" required={mode === "onboarding"}>
-              <Input value={student.batch || ""} readOnly />
+              <Input
+                value={batch}
+                onChange={(e) => setBatch(e.target.value)}
+                readOnly={!canPerformAction}
+              />
             </Field>
           </div>
         </Section>
@@ -474,6 +573,12 @@ export default function SupportDetailPage({ mode = "onboarding" }) {
           {actionLabel}
         </Button>
       </div>
+
+      <PaymentHistoryDrawer
+        open={isPaymentDrawerOpen}
+        studentId={student.id}
+        onClose={() => setIsPaymentDrawerOpen(false)}
+      />
     </div>
   );
 }

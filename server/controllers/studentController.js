@@ -320,6 +320,32 @@ export async function getStudent(req, res) {
   res.json(student);
 }
 
+export async function getPaymentHistory(req, res) {
+  const student = await Student.findOne({ id: req.params.id }).lean();
+  if (!student) return res.status(404).json({ message: "Student not found" });
+  if (!(await canAccessStudent(req, student))) {
+    return res.status(404).json({ message: "Student not found" });
+  }
+
+  const transactions = await PaymentTransaction.find({ studentId: student._id }).sort({ createdAt: 1 }).lean();
+
+  res.json({
+    student: {
+      id: student.id,
+      customerName: student.customerName,
+      saleValue: student.saleValue,
+      discount: student.discount,
+      paidAmount: student.paidAmount,
+      outstanding: student.outstanding,
+      payments: student.payments || [],
+      paymentLinks: student.paymentLinks || [],
+      createdBy: student.createdBy,
+      updatedAt: student.updatedAt,
+    },
+    transactions,
+  });
+}
+
 export async function createStudent(req, res) {
   const b = req.body || {};
   if (!b.customerName) return res.status(400).json({ message: "Student name is required" });

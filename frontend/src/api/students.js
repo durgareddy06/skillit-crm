@@ -49,3 +49,5 @@ export const listAllUsers = () =>
 
 export const verifyPaymentLink = (studentId, paymentLinkId, paymentId) =>
   api.post("/payments/verify-link", { studentId, paymentLinkId, paymentId }).then((r) => r.data);
+
+export const getPaymentHistory = (id) => api.get(`/students/${id}/payment-history`).then((r) => r.data);

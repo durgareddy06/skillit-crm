@@ -82,7 +82,7 @@ const DEFAULT_STUDENT_DROPDOWNS = [
     "UI/UX Design",
   ].map(makeOption)),
   makeSection("Batch", "options", ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"].map(makeOption)),
-  makeSection("Payment Mode", "options", ["Payment Link", "Cash", "Bank Transfer", "UPI", "Cheque", "EMI", "DD (Demand Draft)"].map(makeOption)),
+  makeSection("Payment Mode", "options", ["Not Yet Decided", "Cash", "Swipe", "Bank Transactions", "Shopee", "FEEMONK", "FullPayment", "2Shot Payment", "JODO Flex"].map(makeOption)),
   makeSection("Lead Source", "options", ["Website", "Referral", "Social Media", "Walk-in", "Email Campaign", "Other"].map(makeOption)),
 ];
 
@@ -102,7 +102,7 @@ export const MODULE_CONFIG_TEMPLATES = {
       ]),
     ],
     dropdowns: [
-      makeSection("Payment Mode", "options", ["Payment Link", "Cash", "Bank Transfer", "UPI", "Cheque", "EMI"].map(makeOption)),
+      makeSection("Payment Mode", "options", ["Not Yet Decided", "Cash", "Swipe", "Bank Transactions", "Shopee", "FEEMONK", "FullPayment", "2Shot Payment", "JODO Flex"].map(makeOption)),
     ],
     filters: [],
     verifications: [],
@@ -115,7 +115,7 @@ export const MODULE_CONFIG_TEMPLATES = {
       ]),
     ],
     dropdowns: [
-      makeSection("Payment Mode", "options", ["Cash", "Cashfree", "JoPay"].map(makeOption)),
+      makeSection("Payment Mode", "options", ["Not Yet Decided", "Cash", "Swipe", "Bank Transactions", "Shopee", "FEEMONK", "FullPayment", "2Shot Payment", "JODO Flex"].map(makeOption)),
     ],
     filters: [],
     verifications: [],

@@ -182,7 +182,7 @@ function getModuleFilters(view, rows) {
       return [
         { key: "studentName", label: "Student Name", type: "text" },
         { key: "paymentStatus", label: "Payment Status", type: "select", options: ["Not Generated", "Pending", "Partial", "Paid"] },
-        { key: "paymentMode", label: "Payment Mode", type: "select", options: ["Payment Link", "Cash", "Bank Transfer", "UPI", "Cheque", "EMI"] },
+        { key: "paymentMode", label: "Payment Mode", type: "select", options: ["Not Yet Decided", "Cash", "Swipe", "Bank Transactions", "Shopee", "FEEMONK", "FullPayment", "2Shot Payment", "JODO Flex"] },
         { key: "course", label: "Course", type: "select", options: courses },
         { key: "batch", label: "Batch", type: "select", options: batches },
       ];
@@ -190,7 +190,7 @@ function getModuleFilters(view, rows) {
       return [
         { key: "studentName", label: "Student Name", type: "text" },
         { key: "paymentStatus", label: "Payment Status", type: "select", options: ["Not Generated", "Pending", "Partial", "Paid"] },
-        { key: "paymentMode", label: "Payment Mode", type: "select", options: ["Payment Link", "Cash", "Bank Transfer", "UPI", "Cheque", "EMI"] },
+        { key: "paymentMode", label: "Payment Mode", type: "select", options: ["Not Yet Decided", "Cash", "Swipe", "Bank Transactions", "Shopee", "FEEMONK", "FullPayment", "2Shot Payment", "JODO Flex"] },
         { key: "transactionId", label: "Transaction ID", type: "text" },
         { key: "paymentDate", label: "Payment Date", type: "text" },
         { key: "course", label: "Course", type: "select", options: courses },

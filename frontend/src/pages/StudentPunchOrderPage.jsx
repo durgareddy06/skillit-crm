@@ -45,13 +45,15 @@ const BATCH_OPTIONS = [
 ];
 
 const PAYMENT_MODE_OPTIONS = [
-  "Payment Link",
+  "Not Yet Decided",
   "Cash",
-  "Bank Transfer",
-  "UPI",
-  "Cheque",
-  "EMI",
-  "DD (Demand Draft)",
+  "Swipe",
+  "Bank Transactions",
+  "Shopee",
+  "FEEMONK",
+  "FullPayment",
+  "2Shot Payment",
+  "JODO Flex",
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

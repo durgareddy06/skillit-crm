@@ -7,7 +7,7 @@ import {
   listStudents, studentSummary, getStudent, createStudent, generatePaymentLink, addPayment,
   punchOrder, enrollStudent, cancelStudent, misApprove, misCancel, dropStudent, editStudent,
   transferStudent, listTransferTargets, listAllUsers, getPaymentInvoice, getHierarchyFilters,
-  cancelPaymentLink,
+  cancelPaymentLink, getPaymentHistory,
 } from "../controllers/studentController.js";
 
 import { requestPasswordReset, resetPassword, verifyEmail } from "../controllers/emailController.js";
@@ -187,6 +187,7 @@ router.get("/all-users", listAllUsers);
 router.get("/hierarchy-filters", getHierarchyFilters);
 router.get("/:id", requireDetailStudentPermission(), getStudent);
 router.get("/:id/payments/:paymentIndex/invoice", requireReadStudentPermission(), getPaymentInvoice);
+router.get("/:id/payment-history", requireReadStudentPermission(), getPaymentHistory);
 router.post("/", requireActionPermission("create-student"), createStudent);
 router.post("/:id/payment-link", requireActionPermission("generate-payment-link"), generatePaymentLink);
 router.post("/:id/payment-link/:linkId/cancel", requireActionPermission("generate-payment-link"), cancelPaymentLink);

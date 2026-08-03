@@ -132,13 +132,15 @@ export default function StudentDetail() {
   const { config: studentConfig } = useModuleConfig("student");
 
   const paymentModeOptions = getOptionLabels(findConfigSection(studentConfig?.dropdowns || [], "Payment Mode"), [
-    "Payment Link",
+    "Not Yet Decided",
     "Cash",
-    "Bank Transfer",
-    "UPI",
-    "Cheque",
-    "EMI",
-    "DD (Demand Draft)",
+    "Swipe",
+    "Bank Transactions",
+    "Shopee",
+    "FEEMONK",
+    "FullPayment",
+    "2Shot Payment",
+    "JODO Flex",
   ]);
   const leadSourceOptions = getOptionLabels(findConfigSection(studentConfig?.dropdowns || [], "Lead Source"), [
     "Website",
