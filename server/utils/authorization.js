@@ -4,7 +4,10 @@ import Team from "../models/Team.js";
 import { userHasPermission } from "./permissions.js";
 import {
   isCustomerSupportDesignation,
-  isMisExecutiveDesignation
+  isMisExecutiveDesignation,
+  isSdeDesignation,
+  isManagerDesignation,
+  isSrManagerDesignation
 } from "./userHierarchy.js";
 
 const normalize = (value = "") => String(value).trim().toLowerCase().replace(/[\s._-]+/g, "");
@@ -37,8 +40,18 @@ export async function getAccessibleUserIds(user) {
   if (isCustomerSupportDesignation(user.designation || user.role)) return null;
   if (isMisExecutiveDesignation(user.designation || user.role)) return null;
   
-  const hasReadAll = await userHasPermission(user, "student", "readAll");
-  if (hasReadAll) return null;
+  // SDE, Manager, and Sr.Manager must ALWAYS be scoped hierarchically
+  // and can never get unrestricted access (null) via readAll permission.
+  const roleName = user.designation || user.role;
+  const isHierarchical =
+    isSdeDesignation(roleName) ||
+    isManagerDesignation(roleName) ||
+    isSrManagerDesignation(roleName);
+
+  if (!isHierarchical) {
+    const hasReadAll = await userHasPermission(user, "student", "readAll");
+    if (hasReadAll) return null;
+  }
 
   const userId = String(user.id || user._id || "");
   if (!userId) return [];
