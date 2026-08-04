@@ -2,6 +2,7 @@ import * as studentService from "../services/studentService.js";
 import * as emailService from "../services/emailService.js";
 import * as inboxService from "../services/inboxService.js";
 import Student from "../models/Student.js";
+import { canAccessStudentHelper } from "../utils/authorization.js";
 
 // ==============================================================================
 // #1 FORGOT PASSWORD MODULE & AUTHENTICATION CONTROLLERS
@@ -65,6 +66,9 @@ export async function sendManualEmail(req, res) {
     }
 
     const student = await Student.findOne({ email: to.trim() });
+    if (student && !(await canAccessStudentHelper(req.user, student))) {
+      return res.status(403).json({ message: "You don't have permission to access this student" });
+    }
     
     await emailService.sendEmail({
       to: to.trim(),

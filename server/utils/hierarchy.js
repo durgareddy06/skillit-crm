@@ -3,6 +3,7 @@ import Team from "../models/Team.js";
 import User from "../models/User.js";
 import { userHasPermission } from "./permissions.js";
 import { isSdeDesignation, isCustomerSupportDesignation, isMisExecutiveDesignation } from "./userHierarchy.js";
+import { buildVisibilityFilter, canAccessStudentHelper } from "./authorization.js";
 
 // ---------------------------------------------------------------------------
 // Dynamic, recursive hierarchy-based access control.
@@ -124,80 +125,7 @@ export async function getManagedUserIds(user, { includeSelf = false } = {}) {
 // Otherwise, they are restricted to their own records and their descendants.
 export async function getOwnershipFilter(user) {
   if (!user) return { _id: null }; // no user => no access
-  if (isAdmin(user)) return {};
-  if (isCustomerSupportDesignation(user.designation || user.role)) return {};
-  if (isMisExecutiveDesignation(user.designation || user.role)) return {};
-
-  const userId = String(user.id || user._id || "");
-
-  // If a user manages 0 teams, they are a leaf node and only see their own created records.
-  const ledTeamsCount = await Team.countDocuments({ manager: userId });
-  if (ledTeamsCount === 0) {
-    return {
-      $or: [
-        { createdById: mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId },
-        { $and: [{ createdById: null }, { createdBy: user.name }] },
-      ],
-    };
-  }
-
-  const hasReadAll = await userHasPermission(user, "student", "readAll");
-  if (hasReadAll) {
-    return {};
-  }
-
-  const managedUserIds = await getManagedUserIds(user, { includeSelf: true });
-
-  if (!managedUserIds || managedUserIds.length === 0) {
-    return { _id: null };
-  }
-
-  const managedUsers = await User.find({
-    _id: { $in: managedUserIds.filter((id) => mongoose.isValidObjectId(id)) },
-  })
-    .select("name")
-    .lean();
-
-  const managedNames = [...new Set(managedUsers.map((u) => u.name).filter(Boolean))];
-  const objectIds = managedUserIds
-    .filter((id) => mongoose.isValidObjectId(id))
-    .map((id) => new mongoose.Types.ObjectId(id));
-
-  const userIdObj = mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
-
-  return {
-    $or: [
-      // 1. If the student has reportingHierarchyIds, check if the user is in it
-      { reportingHierarchyIds: userIdObj },
-      // 2. Legacy fallback: if student has no reportingHierarchyIds, use reportedToId live check
-      {
-        $and: [
-          {
-            $or: [
-              { reportingHierarchyIds: { $exists: false } },
-              { reportingHierarchyIds: null },
-              { reportingHierarchyIds: { $size: 0 } }
-            ]
-          },
-          { reportedToId: { $in: objectIds } }
-        ]
-      },
-      // 3. Created by the manager themselves
-      { createdById: userIdObj },
-      // 4. Legacy records without reportedToId, owned based on current team membership
-      {
-        $and: [
-          { reportedToId: null },
-          {
-            $or: [
-              ...(objectIds.length > 0 ? [{ createdById: { $in: objectIds } }] : []),
-              ...(managedNames.length > 0 ? [{ createdBy: { $in: managedNames } }] : [])
-            ]
-          }
-        ]
-      }
-    ]
-  };
+  return buildVisibilityFilter(user);
 }
 
 // Used by Lead Transfer: can `actor` reassign a lead to `targetUserId`?
@@ -310,45 +238,6 @@ export async function getDynamicHierarchyLevels() {
 // Otherwise, they can only access records owned by themselves or their descendants.
 export async function canAccessOwner(actor, ownerUserId, ownerName, reportedToId = null, reportingHierarchyIds = []) {
   if (!actor) return false;
-  if (isAdmin(actor)) return true;
-  if (isCustomerSupportDesignation(actor.designation || actor.role)) return true;
-  if (isMisExecutiveDesignation(actor.designation || actor.role)) return true;
-
-  const hasReadAll = await userHasPermission(actor, "student", "readAll");
-  const hasUpdateAll = await userHasPermission(actor, "student", "updateAll");
-  if (hasReadAll || hasUpdateAll) return true;
-
-  const actorId = String(actor.id || actor._id || "");
-
-  // Creator always has access to their own created records
-  if (ownerUserId && String(ownerUserId) === actorId) {
-    return true;
-  }
-
-  // 1. Check reportingHierarchyIds first: if it is present and populated, it is authoritative
-  if (reportingHierarchyIds && Array.isArray(reportingHierarchyIds) && reportingHierarchyIds.length > 0) {
-    const reportingHierarchyIdStrs = reportingHierarchyIds.map(id => String(id));
-    return reportingHierarchyIdStrs.includes(actorId);
-  }
-
-  const managedUserIds = await getManagedUserIds(actor, { includeSelf: true });
-  if (!managedUserIds) return true;
-
-  // 2. If reportedToId exists, manager access is determined solely by the manager at creation time
-  if (reportedToId) {
-    return managedUserIds.includes(String(reportedToId));
-  }
-
-  // Legacy fallback: determine access based on current team membership of the owner
-  if (ownerUserId && managedUserIds.includes(String(ownerUserId))) {
-    return true;
-  }
-
-  if (!ownerName) return false;
-  const managedUsers = await User.find({
-    _id: { $in: managedUserIds.filter((id) => mongoose.isValidObjectId(id)) },
-  })
-    .select("name")
-    .lean();
-  return managedUsers.some((u) => u.name === ownerName);
+  const student = { createdById: ownerUserId, createdBy: ownerName };
+  return canAccessStudentHelper(actor, student);
 }

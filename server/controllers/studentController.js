@@ -20,6 +20,7 @@ import { userHasPermission } from "../utils/permissions.js";
 import { isSdeDesignation, isManagerDesignation, isSrManagerDesignation } from "../utils/userHierarchy.js";
 import { createRazorpayPaymentLink, cancelRazorpayPaymentLink } from "../services/paymentService.js";
 import PaymentTransaction from "../models/PaymentTransaction.js";
+import { getAccessibleUserIds } from "../utils/authorization.js";
 
 const normalize = (value = "") => String(value).trim().toLowerCase().replace(/[\s._-]+/g, "");
 
@@ -1128,8 +1129,13 @@ export function checkAndQueueStatusEmails(student) {
 
 export async function getHierarchyFilters(req, res) {
   try {
-    const usersRaw = await User.find({ status: "Active" }).select("name role designation").lean();
+    const allUsersRaw = await User.find({ status: "Active" }).select("name role designation").lean();
     const teams = await Team.find().select("manager members").lean();
+
+    const accessibleIds = await getAccessibleUserIds(req.user);
+    const usersRaw = accessibleIds === null
+      ? allUsersRaw
+      : allUsersRaw.filter((u) => accessibleIds.includes(u._id.toString()));
 
     const reportingMap = {};
     for (const team of teams) {

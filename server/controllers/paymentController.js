@@ -8,6 +8,7 @@ import {
   fetchRazorpayPaymentDetails,
 } from "../services/paymentService.js";
 import * as emailService from "../services/emailService.js";
+import { canAccessStudentHelper } from "../utils/authorization.js";
 
 /**
  * Initiates payment order with Razorpay
@@ -25,6 +26,9 @@ export async function createOrder(req, res) {
     const student = await Student.findById(studentId);
     if (!student) {
       return res.status(404).json({ message: "Student not found" });
+    }
+    if (!(await canAccessStudentHelper(req.user, student))) {
+      return res.status(403).json({ message: "You don't have permission to access this student" });
     }
 
     // Locate the specific payment link record
@@ -91,6 +95,14 @@ export async function verifyPayment(req, res) {
     const isValid = verifyPaymentSignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
     if (!isValid) {
       return res.status(400).json({ message: "Payment signature verification failed. Invalid payment." });
+    }
+
+    const student = await Student.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    if (!(await canAccessStudentHelper(req.user, student))) {
+      return res.status(403).json({ message: "You don't have permission to access this student" });
     }
 
     // Process verification and update DB
@@ -360,6 +372,12 @@ export async function refundPayment(req, res) {
 
     // Find student and update records
     const student = await Student.findById(transaction.studentId);
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    if (!(await canAccessStudentHelper(req.user, student))) {
+      return res.status(403).json({ message: "You don't have permission to access this student" });
+    }
     if (student) {
       const refundAmount = transaction.amount;
       student.paidAmount = Math.max(0, student.paidAmount - refundAmount);
@@ -417,6 +435,12 @@ export async function verifyPaymentLink(req, res) {
     // Idempotency: if already captured, return success
     if (transaction.status === "captured") {
       const student = await Student.findById(transaction.studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+      if (!(await canAccessStudentHelper(req.user, student))) {
+        return res.status(403).json({ message: "You don't have permission to access this student" });
+      }
       return res.json({ success: true, student });
     }
 
@@ -458,6 +482,12 @@ export async function verifyPaymentLink(req, res) {
 
     // Find student and update records
     const student = await Student.findById(transaction.studentId);
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    if (!(await canAccessStudentHelper(req.user, student))) {
+      return res.status(403).json({ message: "You don't have permission to access this student" });
+    }
     if (student) {
       // Find the link in student's array
       if (student.paymentLinks) {

@@ -178,7 +178,11 @@ export async function resolveEffectivePermissions(user) {
       // Deduplicate role IDs — many subordinates may share the same role,
       // and we only need to merge each unique role's permissions once.
       const uniqueSubRoleIds = [
-        ...new Set(subordinates.map(s => String(s.roleId)).filter(Boolean))
+        ...new Set(
+          subordinates
+            .map(s => s.roleId ? String(s.roleId) : "")
+            .filter(id => id && id !== "null" && id !== "undefined" && mongoose.isValidObjectId(id))
+        )
       ];
 
       if (uniqueSubRoleIds.length > 0) {
