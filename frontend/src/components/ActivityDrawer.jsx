@@ -9,6 +9,60 @@ const TABS = [
   { key: "onboardings", label: "OnBoardings" },
 ];
 
+function safeCopyToClipboard(text, successMessage = "Copied to clipboard!") {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => alert(successMessage))
+      .catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+
+  function fallbackCopy(textToCopy) {
+    const textArea = document.createElement("textarea");
+    textArea.value = textToCopy;
+    textArea.style.position = "fixed";
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const successful = document.execCommand("copy");
+      if (successful) {
+        alert(successMessage);
+      } else {
+        alert("Failed to copy to clipboard.");
+      }
+    } catch (err) {
+      alert("Failed to copy to clipboard.");
+    }
+    document.body.removeChild(textArea);
+  }
+}
+
+function getAudioUrl(audioPath) {
+  if (!audioPath) return "";
+
+  let backendOrigin = "";
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  if (apiBaseUrl && (apiBaseUrl.startsWith("http://") || apiBaseUrl.startsWith("https://"))) {
+    backendOrigin = apiBaseUrl.replace(/\/api\/?$/, "");
+  } else {
+    backendOrigin = `${window.location.protocol}//${window.location.hostname}:4000`;
+  }
+
+  if (audioPath.startsWith("http://") || audioPath.startsWith("https://")) {
+    const isLive = window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+    if (isLive && audioPath.includes("localhost:4000")) {
+      return audioPath.replace("http://localhost:4000", backendOrigin);
+    }
+    return audioPath;
+  }
+
+  return `${backendOrigin}${audioPath.startsWith("/") ? "" : "/"}${audioPath}`;
+}
+
 function renderLineWithLinks(line) {
   if (typeof line !== "string") return line;
 
@@ -36,8 +90,7 @@ function renderLineWithLinks(line) {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigator.clipboard.writeText(part);
-                  alert("Link copied to clipboard!");
+                  safeCopyToClipboard(part, "Link copied to clipboard!");
                 }}
                 className="inline-flex items-center justify-center px-1 py-0.5 text-slate-400 hover:text-slate-700 bg-white border border-slate-200 rounded text-[9px] font-semibold cursor-pointer"
                 title="Copy Link"
@@ -54,6 +107,8 @@ function renderLineWithLinks(line) {
 }
 
 function SectionCard({ item }) {
+  const resolvedAudioUrl = useMemo(() => getAudioUrl(item.audio), [item.audio]);
+
   return (
     <article className="pb-5">
       <div className="flex items-start justify-between gap-4">
@@ -75,16 +130,15 @@ function SectionCard({ item }) {
 
       {item.audio && (
         <div className="mt-3 space-y-2 w-full">
-          <audio src={item.audio} controls className="w-full h-8 max-w-full rounded-md shadow-sm border border-slate-100 bg-slate-50" />
+          <audio src={resolvedAudioUrl} controls className="w-full h-8 max-w-full rounded-md shadow-sm border border-slate-100 bg-slate-50" />
           <div className="flex gap-3 text-[11px] text-slate-500 pl-1">
-            <a href={item.audio} target="_blank" rel="noopener noreferrer" className="hover:underline text-blue-600 font-medium">
+            <a href={resolvedAudioUrl} target="_blank" rel="noopener noreferrer" className="hover:underline text-blue-600 font-medium">
               Open Recording URL
             </a>
             <span>•</span>
             <button
               onClick={() => {
-                navigator.clipboard.writeText(item.audio);
-                alert("Recording URL copied to clipboard!");
+                safeCopyToClipboard(resolvedAudioUrl, "Recording URL copied to clipboard!");
               }}
               className="hover:underline text-blue-600 font-medium cursor-pointer"
             >

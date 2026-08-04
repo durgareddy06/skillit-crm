@@ -14,6 +14,7 @@ import emailRoutes from "./routes/emails.js";
 import { setSocketIo, startInboxMonitoring } from "./services/inboxService.js";
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(cors());
 app.use(
   express.json({

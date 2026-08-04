@@ -1195,9 +1195,8 @@ export async function uploadRecording(req, res) {
       return res.status(400).json({ message: "No call recording file provided" });
     }
 
-    const host = req.get("host");
-    const protocol = req.protocol;
-    const fileUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+    const baseUrl = (process.env.BACKEND_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+    const fileUrl = `${baseUrl}/uploads/${req.file.filename}`;
 
     const recording = {
       fileName: req.file.originalname,
