@@ -40,19 +40,10 @@ export async function getAccessibleUserIds(user) {
   if (isCustomerSupportDesignation(user.designation || user.role)) return null;
   if (isMisExecutiveDesignation(user.designation || user.role)) return null;
   
-  // SDE, Manager, and Sr.Manager must ALWAYS be scoped hierarchically
-  // and can never get unrestricted access (null) via readAll permission.
-  const roleName = user.designation || user.role;
-  const isHierarchical =
-    isSdeDesignation(roleName) ||
-    isManagerDesignation(roleName) ||
-    isSrManagerDesignation(roleName);
-
-  if (!isHierarchical) {
-    const hasReadAll = await userHasPermission(user, "student", "readAll");
-    if (hasReadAll) return null;
-  }
-
+  // All other roles (SDE, Manager, Sr. Manager, AGM, VP, or any custom roles) 
+  // must ALWAYS be scoped hierarchically and can never get unrestricted access (null) 
+  // via readAll permission. Since CS and MIS are handled above, all other roles
+  // are treated as hierarchical.
   const userId = String(user.id || user._id || "");
   if (!userId) return [];
 
