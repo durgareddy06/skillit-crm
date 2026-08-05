@@ -159,53 +159,6 @@ export async function resolveEffectivePermissions(user) {
     }
   }
 
-  // Inherit permissions recursively from subordinates.
-  // A superior role automatically receives the union (OR) of all permissions
-  // held by every role in its subordinate hierarchy — no hardcoded role
-  // names, purely driven by the Team manager→members reporting structure.
-  try {
-    const hierarchy = await getHierarchyModule();
-    const subordinateIds = await hierarchy.getManagedUserIds(user, { includeSelf: false });
-
-    if (subordinateIds && subordinateIds.length > 0) {
-      const validIds = subordinateIds.filter(id => mongoose.isValidObjectId(id));
-
-      const subordinates = await User.find({
-        _id: { $in: validIds },
-        status: "Active"
-      }).select("roleId").lean();
-
-      // Deduplicate role IDs — many subordinates may share the same role,
-      // and we only need to merge each unique role's permissions once.
-      const uniqueSubRoleIds = [
-        ...new Set(
-          subordinates
-            .map(s => s.roleId ? String(s.roleId) : "")
-            .filter(id => id && id !== "null" && id !== "undefined" && mongoose.isValidObjectId(id))
-        )
-      ];
-
-      if (uniqueSubRoleIds.length > 0) {
-        const subRoles = await Role.find({
-          _id: { $in: uniqueSubRoleIds },
-          status: "Active"
-        }).select("name permissions").lean();
-
-        for (const subRole of subRoles) {
-          if (subRole.permissions && subRole.permissions.length > 0) {
-            ownPermissions = mergePermissionRows(ownPermissions, subRole.permissions);
-          }
-        }
-
-        console.log(
-          `[Permissions] User ${userId} inherited permissions from ${subRoles.length} subordinate role(s): ${subRoles.map(r => r.name).join(", ")}`
-        );
-      }
-    }
-  } catch (err) {
-    console.error(`[Permissions] Error inheriting subordinate permissions for user ${userId}:`, err);
-  }
-
   return ownPermissions;
 }
 

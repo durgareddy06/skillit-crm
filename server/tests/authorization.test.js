@@ -8,6 +8,7 @@ import Role from "../models/Role.js";
 import Team from "../models/Team.js";
 import { getAccessibleUserIds } from "../utils/authorization.js";
 import { canAssignToUser } from "../utils/hierarchy.js";
+import { resolveEffectivePermissions } from "../utils/permissions.js";
 
 // Ensure DB connection before running tests
 test.before(async () => {
@@ -243,5 +244,75 @@ test("authorization - getAccessibleUserIds regression tests", async (t) => {
     // Test transferring to Team B SDE (cross-team) -> Should be false even with updateAll
     const allowCrossTeam = await canAssignToUser(actor, sdeBTeamDoc._id.toString());
     assert.strictEqual(allowCrossTeam, false);
+  });
+
+  await t.test("Manager does NOT inherit permissions from subordinates (RBAC rule)", async () => {
+    // SDE role with booked-orders permission
+    const sdeRole = await Role.create({
+      name: "TestRole SDE",
+      status: "Active",
+      permissions: [
+        {
+          key: "booked-orders",
+          label: "Booked Orders",
+          parentKey: null,
+          basic: { create: true, read: true, update: true, delete: true, details: true },
+          administrative: { readAll: true, updateAll: true, deleteAll: true },
+          special: { email: true, bulkEmail: true, bulkUpdate: true, bulkDelete: true }
+        }
+      ],
+      createdBy: "System",
+      updatedBy: "System"
+    });
+
+    // Manager role with NO permissions
+    const managerRole = await Role.create({
+      name: "TestRole Manager",
+      status: "Active",
+      permissions: [],
+      createdBy: "System",
+      updatedBy: "System"
+    });
+
+    const managerDoc = await User.create({
+      name: "Test Manager Permissions",
+      phone: "9999999901",
+      role: "TestRole Manager",
+      roleId: managerRole._id,
+      designation: "Manager",
+      passwordHash: "dummy"
+    });
+
+    const sdeDoc = await User.create({
+      name: "Test SDE Subordinate",
+      phone: "9999999902",
+      role: "TestRole SDE",
+      roleId: sdeRole._id,
+      designation: "SDE",
+      passwordHash: "dummy"
+    });
+
+    // SDE is a member under manager's team
+    await Team.create({
+      name: "TestTeam Permissions Team",
+      manager: managerDoc._id,
+      members: [sdeDoc._id],
+      status: "Active",
+      createdBy: "System",
+      updatedBy: "System"
+    });
+
+    const managerUser = {
+      id: managerDoc._id.toString(),
+      role: "TestRole Manager",
+      roleId: managerRole._id.toString(),
+      designation: "Manager"
+    };
+
+    const effectivePerms = await resolveEffectivePermissions(managerUser);
+    
+    // The manager should have no permissions because inheritance is disabled!
+    const bookedOrdersPerm = effectivePerms.find(p => p.key === "booked-orders");
+    assert.strictEqual(bookedOrdersPerm, undefined);
   });
 });
