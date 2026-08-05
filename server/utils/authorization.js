@@ -47,6 +47,20 @@ export async function getAccessibleUserIds(user) {
   const userId = String(user.id || user._id || "");
   if (!userId) return [];
 
+  // Check if the user has any active team assignments (either as manager or member)
+  const hasTeamAssignment = await Team.exists({
+    $or: [
+      { manager: userId },
+      { members: userId }
+    ],
+    status: "Active"
+  });
+
+  if (!hasTeamAssignment) {
+    // If no team assignments exist, return empty array to ensure zero records are visible
+    return [];
+  }
+
   // 2. Resolve hierarchical visibility recursively
   const accessibleIds = new Set([userId]);
   const queue = [userId];

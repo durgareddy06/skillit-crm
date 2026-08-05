@@ -139,14 +139,22 @@ export async function canAssignToUser(actor, targetUserId) {
     return false;
   }
 
-  if (isAdmin(actor)) {
-    const ledTeamsCount = await Team.countDocuments({ manager: targetUserId });
-    return ledTeamsCount === 0 || String(targetUser.designation || targetUser.role || "").toLowerCase().includes("sde");
+  const roleName = actor.designation || actor.role;
+  const isUnrestricted =
+    isAdmin(actor) ||
+    isCustomerSupportDesignation(roleName) ||
+    isMisExecutiveDesignation(roleName);
+
+  if (isUnrestricted) {
+    const hasUpdateAll = await userHasPermission(actor, "student", "updateAll");
+    if (hasUpdateAll || isAdmin(actor)) {
+      const ledTeamsCount = await Team.countDocuments({ manager: targetUserId });
+      return ledTeamsCount === 0 || String(targetUser.designation || targetUser.role || "").toLowerCase().includes("sde");
+    }
   }
 
-  const hasUpdateAll = await userHasPermission(actor, "student", "updateAll");
-  if (hasUpdateAll) return true;
-
+  // Hierarchical users can ONLY assign to their subordinate hierarchy.
+  // Cross-team visibility or transfers are strictly impossible.
   const managedUserIds = await getManagedUserIds(actor, { includeSelf: false });
   return managedUserIds.includes(String(targetUserId));
 }

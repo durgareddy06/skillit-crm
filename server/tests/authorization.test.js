@@ -7,6 +7,7 @@ import User from "../models/User.js";
 import Role from "../models/Role.js";
 import Team from "../models/Team.js";
 import { getAccessibleUserIds } from "../utils/authorization.js";
+import { canAssignToUser } from "../utils/hierarchy.js";
 
 // Ensure DB connection before running tests
 test.before(async () => {
@@ -161,5 +162,86 @@ test("authorization - getAccessibleUserIds regression tests", async (t) => {
     assert.ok(result.includes(sde1Doc._id.toString()));
     assert.ok(result.includes(sde2Doc._id.toString()));
     assert.strictEqual(result.length, 3);
+  });
+
+  await t.test("User with no active team assignment returns empty array [] (zero records always)", async () => {
+    const unassignedUserDoc = await User.create({
+      name: "Test Unassigned User",
+      phone: "9999955555",
+      role: "SDE",
+      designation: "SDE",
+      passwordHash: "dummy"
+    });
+
+    const unassignedUser = {
+      id: unassignedUserDoc._id.toString(),
+      role: "SDE",
+      designation: "SDE"
+    };
+
+    const result = await getAccessibleUserIds(unassignedUser);
+    assert.deepStrictEqual(result, []);
+  });
+
+  await t.test("Hierarchical role cannot transfer lead cross-team even with updateAll permission", async () => {
+    const managerDoc = await User.create({
+      name: "Test Cross Team Manager",
+      phone: "9999966666",
+      role: "TestRole AGM", // has student:updateAll/readAll
+      roleId: readAllRole._id,
+      designation: "Manager",
+      passwordHash: "dummy"
+    });
+
+    const actor = {
+      id: managerDoc._id.toString(),
+      role: "TestRole AGM",
+      roleId: readAllRole._id.toString(),
+      designation: "Manager"
+    };
+
+    // manager is manager of team A
+    const sdeATeamDoc = await User.create({
+      name: "SDE Team A",
+      phone: "9999977777",
+      role: "SDE",
+      designation: "SDE",
+      passwordHash: "dummy"
+    });
+
+    await Team.create({
+      name: "TestTeam A",
+      manager: managerDoc._id,
+      members: [sdeATeamDoc._id],
+      status: "Active",
+      createdBy: "System",
+      updatedBy: "System"
+    });
+
+    // Another user in Team B (not in Team A's hierarchy)
+    const sdeBTeamDoc = await User.create({
+      name: "SDE Team B",
+      phone: "9999988888",
+      role: "SDE",
+      designation: "SDE",
+      passwordHash: "dummy"
+    });
+
+    await Team.create({
+      name: "TestTeam B",
+      manager: new mongoose.Types.ObjectId(), // different manager
+      members: [sdeBTeamDoc._id],
+      status: "Active",
+      createdBy: "System",
+      updatedBy: "System"
+    });
+
+    // Test transferring to Team A SDE (subordinate) -> Should be true
+    const allowSubordinate = await canAssignToUser(actor, sdeATeamDoc._id.toString());
+    assert.strictEqual(allowSubordinate, true);
+
+    // Test transferring to Team B SDE (cross-team) -> Should be false even with updateAll
+    const allowCrossTeam = await canAssignToUser(actor, sdeBTeamDoc._id.toString());
+    assert.strictEqual(allowCrossTeam, false);
   });
 });
