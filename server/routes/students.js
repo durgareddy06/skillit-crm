@@ -218,7 +218,7 @@ router.post("/:id/mis-approve", requireActionPermission("mis-approve"), misAppro
 router.post("/:id/mis-cancel", requireActionPermission("mis-escalate"), misCancel);
 router.post("/:id/drop", requireActionPermission("drop-student"), dropStudent);
 router.patch("/:id", requireActionPermission("edit-student"), editStudent);
-router.post("/:id/upload-recording", requireActionPermission("edit-student"), upload.single("recording"), uploadRecording);
+router.post("/:id/upload-recording", requireActionPermission("upload-recording"), upload.single("recording"), uploadRecording);
 
 // Lead Transfer — hierarchy-validated on the backend (see
 // utils/hierarchy.js canAssignToUser). Reachable from both the Student row

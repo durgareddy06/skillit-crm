@@ -262,6 +262,16 @@ export async function userHasActionPermission(user, actionKey, context) {
   if (actionKey === "edit-student") {
     return await userHasPermission(user, contextKey, "update");
   }
+  if (actionKey === "upload-recording") {
+    // Call recording uploads happen from onboarding, orientation, and student
+    // detail pages. Grant access if the user can update ANY of those modules.
+    const modulesToCheck = ["student", "onboarding", "orientation"];
+    for (const mod of modulesToCheck) {
+      if (await userHasPermission(user, mod, "update")) return true;
+      if (await userHasPermission(user, mod, "create")) return true;
+    }
+    return false;
+  }
   if (actionKey === "transfer-lead") {
     if (isSdeDesignation(user.designation || user.role)) return false;
     return await userHasPermission(user, "student", "update");
