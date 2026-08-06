@@ -112,10 +112,136 @@ function val(v, fallback = "—") {
   return s || fallback;
 }
 
+const JOURNEY_ACTION_TITLES = {
+  "Student Created": "Student Created",
+  "Payment Link Generated": "Payment Link Generated",
+  "Payment Link Cancelled": "Payment Link Cancelled",
+  "Payment Added": "Payment Added",
+  "Order Punched": "Order Punched",
+  "Student Enrolled": "Enrolled",
+  "MIS Approved": "MIS Approved",
+  "Onboarding Submitted": "Onboarding",
+  "Orientation Completed": "Orientation",
+  "Verification Checklist Updated": "Verification Checklist Updated",
+  "Student Details Updated": "Student Details Updated",
+  "Lead Transferred": "Lead Transferred",
+  "Student Registration Cancelled": "Student Registration Cancelled",
+  "Student Dropped": "Student Dropped",
+  "Call Recording Uploaded": "Call Recording Uploaded",
+};
+
+function getItemTimestamp(item) {
+  const raw = item?.timestamp || item?.at || item?.createdAt || item?.updatedAt || 0;
+  const parsed = raw instanceof Date ? raw : new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+}
+
+function formatActionTitle(action, userName) {
+  const title = JOURNEY_ACTION_TITLES[action] || action || "Activity";
+  const actor = val(userName, "System");
+  return actor ? `${title} by ${actor}` : title;
+}
+
+function formatLogDetailValue(key, value) {
+  if (key === "amount" || key === "saleValue" || key === "paidAmount" || key === "outstanding") {
+    return fmtMoney(value);
+  }
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+  return value;
+}
+
+function getLogDetailLines(details) {
+  if (!details || typeof details !== "object") return [];
+
+  const lines = [];
+  for (const [key, value] of Object.entries(details)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item == null || item === "") continue;
+        if (typeof item === "string") {
+          lines.push(item);
+          continue;
+        }
+        if (typeof item === "object") {
+          const nested = Object.entries(item)
+            .map(([nestedKey, nestedValue]) => `${nestedKey.replace(/([A-Z])/g, " $1").replace(/^./, (str) => str.toUpperCase())}: ${formatLogDetailValue(nestedKey, nestedValue)}`)
+            .join(", ");
+          if (nested) lines.push(nested);
+        }
+      }
+      continue;
+    }
+
+    if (value && typeof value === "object") {
+      const nested = Object.entries(value)
+        .map(([nestedKey, nestedValue]) => `${nestedKey.replace(/([A-Z])/g, " $1").replace(/^./, (str) => str.toUpperCase())}: ${formatLogDetailValue(nestedKey, nestedValue)}`)
+        .join(", ");
+      if (nested) lines.push(`${key.replace(/([A-Z])/g, " $1").replace(/^./, (str) => str.toUpperCase())}: ${nested}`);
+      continue;
+    }
+
+    const label = key.replace(/([A-Z])/g, " $1").replace(/^./, str => str.toUpperCase());
+    lines.push(`${label}: ${formatLogDetailValue(key, value)}`);
+  }
+
+  return lines;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function getActivityFeed(student) {
   if (!student) return { all: [], callLogs: [], payments: [], onboardings: [] };
+
+  if (Array.isArray(student.activityLogs) && student.activityLogs.length > 0) {
+    const all = [];
+    const callLogs = [];
+    const payments = [];
+    const onboardings = [];
+
+    // Sort ascending so the feed mirrors the production sequence.
+    const sortedLogs = [...student.activityLogs].sort((a, b) => getItemTimestamp(a) - getItemTimestamp(b));
+
+    for (const log of sortedLogs) {
+      const logDetails = getLogDetailLines(log.details);
+      const timestamp = getItemTimestamp(log);
+      const actorName = val(log.userName, "System");
+
+      const item = {
+        title: formatActionTitle(log.action, actorName),
+        at: fmtDateTime(log.timestamp || log.createdAt || log.updatedAt || timestamp),
+        details: logDetails,
+        audio: log.action === "Call Recording Uploaded" ? log.details?.url : undefined,
+        timestamp
+      };
+
+      all.push(item);
+
+      if (log.action === "Call Recording Uploaded") {
+        callLogs.push(item);
+      } else if (
+        log.action === "Payment Added" ||
+        log.action === "Payment Link Generated" ||
+        log.action === "Payment Link Cancelled"
+      ) {
+        payments.push(item);
+      } else if (
+        log.action === "Onboarding Submitted" ||
+        log.action === "Orientation Completed" ||
+        log.action === "Verification Checklist Updated"
+      ) {
+        onboardings.push(item);
+      }
+    }
+
+    return {
+      all,
+      callLogs,
+      payments,
+      onboardings
+    };
+  }
 
   const s = student;
   const createdBy = val(s.createdBy);
@@ -129,7 +255,7 @@ export function getActivityFeed(student) {
   // ── 1. Student Created ─────────────────────────────────────────────────────
   if (s.createdAt) {
     allItems.push({
-      title: `Student created by ${createdBy}`,
+      title: `Student Created by ${createdBy}`,
       at: fmtDateTime(s.createdAt),
       details: [
         `Student Name: ${val(s.customerName)}`,
@@ -231,7 +357,7 @@ export function getActivityFeed(student) {
   // ── 5. Enrolled ───────────────────────────────────────────────────────────
   if (s.status === "Enrolled" && s.enrolledAt) {
     allItems.push({
-      title: `Student Enrolled by ${managerName}`,
+      title: `Enrolled by ${managerName}`,
       at: fmtDateTime(s.enrolledAt),
       details: [
         `Status changed to Enrolled`,
@@ -302,7 +428,7 @@ export function getActivityFeed(student) {
   // ── 7. Onboarding Submitted ───────────────────────────────────────────────
   if (s.onboardingSubmitted) {
     const onboardingEntry = {
-      title: `Onboarding Submitted by ${sdeName}`,
+      title: `Onboarding by ${sdeName}`,
       at: s.onboardingSubmittedAt ? fmtDateTime(s.onboardingSubmittedAt) : (s.onboardingDate ? fmtDate(s.onboardingDate) : ""),
       details: [
         `Full Name: ${val(s.customerName)}`,
@@ -329,7 +455,7 @@ export function getActivityFeed(student) {
   // ── 8. Orientation Completed ──────────────────────────────────────────────
   if (s.orientationCompleted) {
     const orientationEntry = {
-      title: `Orientation Completed by ${sdeName}`,
+      title: `Orientation by ${sdeName}`,
       at: s.orientationCompletedAt ? fmtDateTime(s.orientationCompletedAt) : (s.orientationDate ? fmtDate(s.orientationDate) : ""),
       details: [
         s.orientationDate ? `Orientation Date: ${fmtDate(s.orientationDate)}` : null,
@@ -366,8 +492,11 @@ export function getActivityFeed(student) {
     }
   }
 
+  callLogs.sort((a, b) => getItemTimestamp(a) - getItemTimestamp(b));
+  paymentItems.sort((a, b) => getItemTimestamp(a) - getItemTimestamp(b));
+  onboardingItems.sort((a, b) => getItemTimestamp(a) - getItemTimestamp(b));
   allItems.push(...callLogs);
-  allItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  allItems.sort((a, b) => getItemTimestamp(a) - getItemTimestamp(b));
 
   return {
     all: allItems,

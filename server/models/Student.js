@@ -156,6 +156,96 @@ const studentSchema = new mongoose.Schema(
   { timestamps: { createdAt: false, updatedAt: "updatedAt" } }
 );
 
+studentSchema.pre("save", async function (next) {
+  try {
+    const User = mongoose.model("User");
+    const Team = mongoose.model("Team");
+
+    // 1. If sdeName is modified, sync creator details & parent team/manager info
+    if (this.isModified("sdeName") && this.sdeName) {
+      const sdeUser = await User.findOne({ name: this.sdeName, status: "Active" }).lean();
+      if (!sdeUser) {
+        throw new Error(`Active user with name "${this.sdeName}" not found`);
+      }
+      this.createdById = sdeUser._id;
+      this.createdBy = sdeUser.name;
+      this.sdeName = sdeUser.name;
+
+      // Find team of the SDE
+      const team = await Team.findOne({ members: sdeUser._id, status: "Active" }).lean();
+      if (team) {
+        this.teamId = team._id;
+        this.teamName = team.name;
+      } else {
+        this.teamId = null;
+        this.teamName = "";
+      }
+
+      // Resolve direct manager of SDE
+      const mgrId = team?.manager ? team.manager.toString() : null;
+      if (mgrId) {
+        const mgrUser = await User.findById(mgrId).lean();
+        if (mgrUser) {
+          this.reportedToId = mgrUser._id;
+          this.reportedTo = mgrUser.name;
+          this.manager = mgrUser.name;
+
+          // Rebuild reporting hierarchy upwards
+          const ancestors = [];
+          const visited = new Set();
+          let currentId = mgrUser._id.toString();
+          visited.add(currentId);
+          while (true) {
+            const nextTeam = await Team.findOne({ members: currentId, status: "Active" }).lean();
+            const nextMgrId = nextTeam?.manager ? nextTeam.manager.toString() : null;
+            if (!nextMgrId || visited.has(nextMgrId)) break;
+            ancestors.push(new mongoose.Types.ObjectId(nextMgrId));
+            visited.add(nextMgrId);
+            currentId = nextMgrId;
+          }
+          this.reportingHierarchyIds = [mgrUser._id, ...ancestors];
+        }
+      } else {
+        this.reportedToId = null;
+        this.reportedTo = "";
+        this.manager = "";
+        this.reportingHierarchyIds = [];
+      }
+    }
+
+    // 2. If manager/reportedTo is explicitly modified, override the manager & hierarchy
+    if ((this.isModified("manager") || this.isModified("reportedTo")) && (this.manager || this.reportedTo)) {
+      const mgrName = this.manager || this.reportedTo;
+      const mgrUser = await User.findOne({ name: mgrName, status: "Active" }).lean();
+      if (!mgrUser) {
+        throw new Error(`Active manager user with name "${mgrName}" not found`);
+      }
+      this.reportedToId = mgrUser._id;
+      this.reportedTo = mgrUser.name;
+      this.manager = mgrUser.name;
+
+      // Rebuild reporting hierarchy upwards from this manager
+      const ancestors = [];
+      const visited = new Set();
+      let currentId = mgrUser._id.toString();
+      visited.add(currentId);
+      while (true) {
+        const nextTeam = await Team.findOne({ members: currentId, status: "Active" }).lean();
+        const nextMgrId = nextTeam?.manager ? nextTeam.manager.toString() : null;
+        if (!nextMgrId || visited.has(nextMgrId)) break;
+        ancestors.push(new mongoose.Types.ObjectId(nextMgrId));
+        visited.add(nextMgrId);
+        currentId = nextMgrId;
+      }
+      this.reportingHierarchyIds = [mgrUser._id, ...ancestors];
+    }
+
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 studentSchema.index({ createdById: 1, dropped: 1, _id: -1 });
 studentSchema.index({ createdBy: 1, dropped: 1, _id: -1 });
 studentSchema.index({ status: 1, misStatus: 1, dropped: 1, _id: -1 });

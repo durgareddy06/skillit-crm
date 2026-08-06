@@ -6,6 +6,7 @@ import User from "../models/User.js";
 import Team from "../models/Team.js";
 import Student from "../models/Student.js";
 import UserTransferHistory from "../models/UserTransferHistory.js";
+import ActivityLog from "../models/ActivityLog.js";
 import { buildVisibilityFilter } from "../utils/authorization.js";
 import { assignUsers, transferTeamMembers } from "../controllers/adminTeamController.js";
 import { createStudent } from "../controllers/studentController.js";
@@ -20,6 +21,7 @@ test.before(async () => {
   await Team.deleteMany({ name: { $regex: /^TestSdeTeam/ } });
   await Student.deleteMany({ customerName: { $regex: /^TestSdeStudent/ } });
   await UserTransferHistory.deleteMany({});
+  await ActivityLog.deleteMany({});
 });
 
 test.after(async () => {
@@ -28,6 +30,7 @@ test.after(async () => {
   await Team.deleteMany({ name: { $regex: /^TestSdeTeam/ } });
   await Student.deleteMany({ customerName: { $regex: /^TestSdeStudent/ } });
   await UserTransferHistory.deleteMany({});
+  await ActivityLog.deleteMany({});
   await mongoose.disconnect();
 });
 
@@ -246,5 +249,62 @@ test("SDE Team Transfer - Historical Sales Ownership Persistence", async (t) => 
     // Manager 2 must see Student 2 (new sale) but not Student 1
     assert.strictEqual(studentsForManager2.length, 1);
     assert.strictEqual(studentsForManager2[0].customerName, "TestSdeStudent 2");
+  });
+});
+
+test("Activity Log Tracking - Synchronization & Audit Trail", async (t) => {
+  let managerDoc, sdeDoc, studentDoc;
+
+  await t.test("Setup test user and student", async () => {
+    managerDoc = await User.create({
+      name: "TestSde Manager Activity",
+      phone: "9999099999",
+      role: "Manager",
+      designation: "Manager",
+      passwordHash: "dummy"
+    });
+
+    sdeDoc = await User.create({
+      name: "TestSde SDE Activity",
+      phone: "9999088888",
+      role: "SDE",
+      designation: "SDE",
+      passwordHash: "dummy"
+    });
+
+    const req = {
+      body: {
+        customerName: "TestSdeStudent Activity",
+        altContactNumber: "9999999999",
+        courseFee: 50000,
+        paidAmount: 0,
+      },
+      user: {
+        id: sdeDoc._id.toString(),
+        name: sdeDoc.name,
+        role: sdeDoc.role,
+        designation: sdeDoc.designation,
+      }
+    };
+    
+    let responseData;
+    const res = {
+      status: (code) => res,
+      json: (data) => {
+        responseData = data;
+        return res;
+      }
+    };
+
+    await createStudent(req, res);
+    studentDoc = await Student.findOne({ id: responseData.id });
+    assert.ok(studentDoc);
+
+    const ActivityLog = mongoose.model("ActivityLog");
+    const logs = await ActivityLog.find({ studentId: studentDoc._id }).lean();
+    assert.strictEqual(logs.length, 1);
+    assert.strictEqual(logs[0].action, "Student Created");
+    assert.strictEqual(logs[0].userName, sdeDoc.name);
+    assert.strictEqual(logs[0].userRole, sdeDoc.designation);
   });
 });

@@ -22,6 +22,8 @@ import { createRazorpayPaymentLink, cancelRazorpayPaymentLink } from "../service
 import PaymentTransaction from "../models/PaymentTransaction.js";
 import UserTransferHistory from "../models/UserTransferHistory.js";
 import { getAccessibleUserIds } from "../utils/authorization.js";
+import { logActivity } from "../utils/activityLogger.js";
+import ActivityLog from "../models/ActivityLog.js";
 
 const normalize = (value = "") => String(value).trim().toLowerCase().replace(/[\s._-]+/g, "");
 
@@ -323,6 +325,10 @@ export async function getStudent(req, res) {
   if (!(await canAccessStudent(req, student))) {
     return res.status(404).json({ message: "Student not found" });
   }
+
+  const activityLogs = await ActivityLog.find({ studentId: student._id }).sort({ timestamp: -1 }).lean();
+  student.activityLogs = activityLogs;
+
   res.json(student);
 }
 
@@ -462,6 +468,12 @@ export async function createStudent(req, res) {
   });
 
   await student.save();
+  await logActivity(student, req, "Student Created", {
+    customerName: student.customerName,
+    program: student.program || student.course,
+    batch: student.batch,
+    saleValue: student.saleValue
+  });
   emitStudentUpdate(req, student);
 
   res.status(201).json(student);
@@ -532,6 +544,11 @@ export async function generatePaymentLink(req, res) {
     student.paymentLinkStatus = "Pending";
     student.paymentLinkUrl = url;
     await student.save();
+    await logActivity(student, req, "Payment Link Generated", {
+      amount,
+      linkId,
+      url
+    });
     emitStudentUpdate(req, student);
 
     res.json(student);
@@ -601,6 +618,9 @@ export async function cancelPaymentLink(req, res) {
     }
 
     await student.save();
+    await logActivity(student, req, "Payment Link Cancelled", {
+      linkId
+    });
     emitStudentUpdate(req, student);
 
     res.json(student);
@@ -663,6 +683,11 @@ export async function addPayment(req, res) {
   student.paymentLinkStatus = student.outstanding === 0 ? "Paid" : "Partial";
 
   await student.save();
+  await logActivity(student, req, "Payment Added", {
+    amount: amt,
+    mode: mode || "Payment Link",
+    refId: paymentRecord.refId
+  });
   emitStudentUpdate(req, student);
 
   emailService.sendPaymentSuccessEmail(
@@ -705,6 +730,14 @@ export async function punchOrder(req, res) {
   student.status = "Pending";
   const emailQueue = checkAndQueueStatusEmails(student);
   await student.save();
+  await logActivity(student, req, "Order Punched", {
+    course: student.course,
+    batch: student.batch,
+    saleValue: student.saleValue,
+    paidAmount: student.paidAmount,
+    outstanding: student.outstanding,
+    demoDoneBy: student.demoDoneBy
+  });
   emitStudentUpdate(req, student);
 
   emailQueue.forEach(fn => fn().catch(err => {
@@ -737,6 +770,10 @@ export async function enrollStudent(req, res) {
   student.status = "Enrolled";
   student.misStatus = null;
   await student.save();
+  await logActivity(student, req, "Student Enrolled", {
+    course: student.course,
+    batch: student.batch
+  });
   emitStudentUpdate(req, student);
   res.json(student);
 }
@@ -750,6 +787,9 @@ export async function cancelStudent(req, res) {
   student.status = "Cancelled";
   student.cancelledAt = new Date().toLocaleString("en-GB");
   await student.save();
+  await logActivity(student, req, "Student Registration Cancelled", {
+    remarks: student.internalRemarks
+  });
   emitStudentUpdate(req, student);
   res.json(student);
 }
@@ -764,6 +804,9 @@ export async function misApprove(req, res) {
   student.misApprovedAt = new Date().toLocaleString("en-GB");
   const emailQueue = checkAndQueueStatusEmails(student);
   await student.save();
+  await logActivity(student, req, "MIS Approved", {
+    remarks: student.internalRemarks
+  });
   emitStudentUpdate(req, student);
 
   emailQueue.forEach(fn => fn().catch(err => {
@@ -783,6 +826,9 @@ export async function misCancel(req, res) {
   student.misStatus = null;
   student.cancelledAt = new Date().toLocaleString("en-GB");
   await student.save();
+  await logActivity(student, req, "MIS Rejected/Escalated", {
+    remarks: student.internalRemarks
+  });
   emitStudentUpdate(req, student);
   res.json(student);
 }
@@ -797,6 +843,9 @@ export async function dropStudent(req, res) {
   student.status = "Dropped";
   student.droppedAt = new Date().toLocaleString("en-GB");
   await student.save();
+  await logActivity(student, req, "Student Dropped", {
+    remarks: student.internalRemarks
+  });
   emitStudentUpdate(req, student);
   res.json(student);
 }
@@ -921,6 +970,8 @@ export async function transferStudent(req, res) {
   student.manager = reportingManagerName;
   student.reportingHierarchyIds = reportingHierarchyIds;
 
+  const oldOwnerName = student.createdBy || "Unassigned";
+
   // Resolve team & assignment timestamp for target user
   const targetTeam = await Team.findOne({ members: targetUser._id }).lean();
   const targetTeamId = targetTeam ? targetTeam._id : null;
@@ -938,6 +989,10 @@ export async function transferStudent(req, res) {
   student.assignmentTimestamp = targetAssignmentTimestamp;
 
   await student.save();
+  await logActivity(student, req, "Lead Transferred", {
+    fromUser: oldOwnerName,
+    toUser: targetUser.name
+  });
   emitStudentUpdate(req, student);
   res.json(student);
 }
@@ -957,6 +1012,37 @@ export async function editStudent(req, res) {
   const originalOnboardingSubmitted = student.onboardingSubmitted;
   const originalOrientationCompleted = student.orientationCompleted;
 
+  const trackedFields = [
+    "customerName", "primaryContactName", "email", "contactNumber", "altContactNumber",
+    "category", "course", "batch", "quarter", "date", "month", "cycle", "program",
+    "saleValue", "discount", "paidAmount", "paymentMode", "sdeName", "manager",
+    "demoDoneBy", "salesType", "leadSource", "leadLink", "officeVisit", "internalRemarks"
+  ];
+
+  const changes = [];
+  for (const field of trackedFields) {
+    if (req.body[field] !== undefined) {
+      const oldVal = student[field];
+      const newVal = req.body[field];
+      if (String(oldVal || "").trim() !== String(newVal || "").trim()) {
+        const fieldLabel = field.replace(/([A-Z])/g, " $1").replace(/^./, str => str.toUpperCase());
+        changes.push(`${fieldLabel}: "${oldVal || "—"}" → "${newVal || "—"}"`);
+      }
+    }
+  }
+
+  if (req.body.customFields) {
+    const oldCustom = student.customFields || {};
+    const newCustom = req.body.customFields;
+    Object.entries(newCustom).forEach(([key, val]) => {
+      const oldVal = oldCustom[key];
+      if (String(oldVal || "").trim() !== String(val || "").trim()) {
+        const fieldLabel = key.replace(/([A-Z])/g, " $1").replace(/^./, str => str.toUpperCase());
+        changes.push(`${fieldLabel}: "${oldVal || "—"}" → "${val || "—"}"`);
+      }
+    });
+  }
+
   Object.assign(student, req.body || {});
 
   if (student.onboardingSubmitted && (!originalOnboardingSubmitted || !student.onboardingSubmittedAt)) {
@@ -968,6 +1054,52 @@ export async function editStudent(req, res) {
 
   student.customFields = normalizeCustomFields(req.body?.customFields ?? student.customFields);
   const emailQueue = checkAndQueueStatusEmails(student);
+
+  if (changes.length > 0) {
+    await logActivity(student, req, "Student Details Updated", {
+      changes
+    });
+  }
+
+  if (student.onboardingSubmitted && !originalOnboardingSubmitted) {
+    await logActivity(student, req, "Onboarding Submitted", {
+      comments: student.onboardingComments,
+      onboardingDate: student.onboardingDate,
+      verifications: (student.onboardingVerifications || []).map(v => `${v.item}: ${v.verified ? "Verified" : "Not Verified"}`)
+    });
+  }
+  if (student.orientationCompleted && !originalOrientationCompleted) {
+    await logActivity(student, req, "Orientation Completed", {
+      orientationDate: student.orientationDate,
+      orientationLink: student.orientationLink,
+      recordedLink: student.recordedLink,
+      remarks: student.internalRemarks
+    });
+  }
+  if (req.body.status && req.body.status !== originalStatus) {
+    await logActivity(student, req, "Status Updated", {
+      fromStatus: originalStatus,
+      toStatus: student.status
+    });
+  }
+  if (req.body.onboardingVerifications && originalOnboardingSubmitted) {
+    const prevMap = new Map((student.onboardingVerifications || []).map(v => [v.item, v.verified]));
+    const nextList = req.body.onboardingVerifications;
+    const checklistChanges = [];
+    for (const item of nextList) {
+      const prevVal = prevMap.get(item.item);
+      const newVal = item.verified;
+      if (prevVal !== undefined && prevVal !== newVal) {
+        checklistChanges.push(`${item.item} changed to ${newVal ? "Verified" : "Not Verified"}`);
+      }
+    }
+    if (checklistChanges.length > 0) {
+      await logActivity(student, req, "Verification Checklist Updated", {
+        changes: checklistChanges
+      });
+    }
+  }
+
   await student.save();
   emitStudentUpdate(req, student);
 
@@ -1254,6 +1386,10 @@ export async function uploadRecording(req, res) {
     student.callRecordings = student.callRecordings || [];
     student.callRecordings.push(recording);
     await student.save();
+    await logActivity(student, req, "Call Recording Uploaded", {
+      fileName: recording.fileName,
+      url: recording.url
+    });
 
     emitStudentUpdate(req, student);
 

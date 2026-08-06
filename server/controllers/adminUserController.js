@@ -4,6 +4,7 @@ import Team from "../models/Team.js";
 import Student from "../models/Student.js";
 import { normalizePhone } from "../utils/phone.js";
 import { getReportingManagerId } from "../utils/hierarchy.js";
+import { isSdeDesignation } from "../utils/userHierarchy.js";
 
 const normalize = (value = "") => String(value).trim().toLowerCase().replace(/[\s._-]+/g, "");
 
@@ -162,6 +163,12 @@ export async function updateUser(req, res) {
     "salutation", "name", "email", "phone",
     "dateOfJoining", "department", "appAccess", "status",
   ];
+
+  const requestedStatus = req.body.status;
+  if (requestedStatus === "Archived" && isSdeDesignation(user.designation || user.role)) {
+    return res.status(400).json({ message: "SDE accounts cannot be archived or deleted." });
+  }
+
   for (const f of fields) {
     if (req.body[f] !== undefined) {
       if (f === "phone") {
@@ -199,6 +206,9 @@ export async function deleteUser(req, res) {
   }
   const user = await User.findById(id);
   if (!user) return res.status(404).json({ message: "User not found" });
+  if (isSdeDesignation(user.designation || user.role)) {
+    return res.status(400).json({ message: "SDE accounts cannot be archived or deleted." });
+  }
 
   user.status = "Archived";
   user.updatedBy = req.user?.name || "Admin";

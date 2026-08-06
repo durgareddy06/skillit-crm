@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Play, X } from "lucide-react";
 import { getActivityFeed } from "../data/activityFeed";
+import { getStudent } from "../api/students";
 
 const TABS = [
   { key: "all", label: "All" },
@@ -160,12 +161,33 @@ function SectionCard({ item }) {
 
 export default function ActivityDrawer({ open, student, onClose, defaultTab = "all" }) {
   const [activeTab, setActiveTab] = useState(defaultTab);
+  const [detailedStudent, setDetailedStudent] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (open) setActiveTab(defaultTab);
   }, [open, defaultTab, student?.id]);
 
-  const feed = useMemo(() => getActivityFeed(student), [student]);
+  useEffect(() => {
+    if (open && student?.id) {
+      setLoading(true);
+      getStudent(student.id)
+        .then((data) => {
+          setDetailedStudent(data);
+        })
+        .catch((err) => {
+          console.error("Failed to fetch detailed student:", err);
+          setDetailedStudent(student);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else {
+      setDetailedStudent(null);
+    }
+  }, [open, student?.id]);
+
+  const feed = useMemo(() => getActivityFeed(detailedStudent || student), [detailedStudent, student]);
 
   if (!open) return null;
 
@@ -225,7 +247,12 @@ export default function ActivityDrawer({ open, student, onClose, defaultTab = "a
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            {activeTab === "all" ? (
+            {loading ? (
+              <div className="flex flex-col items-center justify-center h-full gap-2 py-10">
+                <span className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+                <span className="text-xs text-slate-400 font-medium">Syncing activity data...</span>
+              </div>
+            ) : activeTab === "all" ? (
               feed.all.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-10">No activity recorded yet.</p>
               ) : (

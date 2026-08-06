@@ -246,6 +246,11 @@ export async function getDynamicHierarchyLevels() {
 // Otherwise, they can only access records owned by themselves or their descendants.
 export async function canAccessOwner(actor, ownerUserId, ownerName, reportedToId = null, reportingHierarchyIds = []) {
   if (!actor) return false;
-  const student = { createdById: ownerUserId, createdBy: ownerName };
+  const student = {
+    createdById: ownerUserId,
+    createdBy: ownerName,
+    reportedToId,
+    reportingHierarchyIds,
+  };
   return canAccessStudentHelper(actor, student);
 }

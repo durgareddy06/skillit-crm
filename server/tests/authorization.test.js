@@ -7,7 +7,7 @@ import User from "../models/User.js";
 import Role from "../models/Role.js";
 import Team from "../models/Team.js";
 import { getAccessibleUserIds } from "../utils/authorization.js";
-import { canAssignToUser } from "../utils/hierarchy.js";
+import { canAssignToUser, canAccessOwner } from "../utils/hierarchy.js";
 import { resolveEffectivePermissions } from "../utils/permissions.js";
 
 // Ensure DB connection before running tests
@@ -314,5 +314,47 @@ test("authorization - getAccessibleUserIds regression tests", async (t) => {
     // The manager should have no permissions because inheritance is disabled!
     const bookedOrdersPerm = effectivePerms.find(p => p.key === "booked-orders");
     assert.strictEqual(bookedOrdersPerm, undefined);
+  });
+
+  await t.test("Manager can access a lead owned by a subordinate in their reporting hierarchy", async () => {
+    const managerDoc = await User.create({
+      name: "Test Access Manager",
+      phone: "9999999911",
+      role: "Manager",
+      designation: "Manager",
+      passwordHash: "dummy"
+    });
+
+    const sdeDoc = await User.create({
+      name: "Test Access SDE",
+      phone: "9999999912",
+      role: "SDE",
+      designation: "SDE",
+      passwordHash: "dummy"
+    });
+
+    await Team.create({
+      name: "TestTeam Access",
+      manager: managerDoc._id,
+      members: [sdeDoc._id],
+      status: "Active",
+      createdBy: "System",
+      updatedBy: "System"
+    });
+
+    const allowed = await canAccessOwner(
+      {
+        id: managerDoc._id.toString(),
+        name: managerDoc.name,
+        role: managerDoc.role,
+        designation: managerDoc.designation
+      },
+      sdeDoc._id,
+      sdeDoc.name,
+      managerDoc._id,
+      [managerDoc._id]
+    );
+
+    assert.strictEqual(allowed, true);
   });
 });

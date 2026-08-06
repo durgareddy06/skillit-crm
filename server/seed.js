@@ -10,6 +10,7 @@ import Role from "./models/Role.js";
 import { DEFAULT_MODULE_SEED } from "./utils/permissions.js";
 import { ensureDefaultRoles } from "./utils/roles.js";
 import { getAncestorManagerIds } from "./utils/hierarchy.js";
+import ActivityLog from "./models/ActivityLog.js";
 
 const normalizeName = (value = "") => String(value).trim().toLowerCase().replace(/[\s._-]+/g, "");
 
@@ -62,7 +63,8 @@ async function run() {
     await Counter.create({ _id: "ticketId", seq: 8290 });
   }
 
-  await removeLegacyDemoStudents();
+  // DO NOT delete legacy demo student IDs as they conflict with actual student IDs created under production sequences
+  // await removeLegacyDemoStudents();
 
   console.log("Ensuring the default role list exists...");
   await ensureDefaultRoles();
@@ -147,6 +149,232 @@ async function run() {
   }
   if (backfilledCount > 0) {
     console.log(`  -> backfilled teamId/teamName/assignmentTimestamp for ${backfilledCount} student(s).`);
+  }
+
+  console.log("Backfilling ActivityLog entries for existing students...");
+  const allStudents = await Student.find({}).lean();
+  let logCount = 0;
+  for (const s of allStudents) {
+    const hasLogs = await ActivityLog.exists({ studentId: s._id });
+    if (!hasLogs) {
+      const logs = [];
+
+      // 1. Student Created
+      if (s.createdAt) {
+        logs.push({
+          studentId: s._id,
+          studentUniqueId: s.id,
+          userName: s.createdBy || "System",
+          userRole: "SDE",
+          action: "Student Created",
+          details: {
+            customerName: s.customerName,
+            program: s.program || s.course,
+            batch: s.batch,
+            saleValue: s.saleValue
+          },
+          timestamp: s.createdAt ? new Date(s.createdAt) : new Date()
+        });
+      }
+
+      // 2. Payment Links
+      if (Array.isArray(s.paymentLinks)) {
+        s.paymentLinks.forEach((link) => {
+          logs.push({
+            studentId: s._id,
+            studentUniqueId: s.id,
+            userName: s.sdeName || s.createdBy || "System",
+            userRole: "SDE",
+            action: "Payment Link Generated",
+            details: {
+              amount: link.amount,
+              linkId: link.linkId,
+              url: link.url
+            },
+            timestamp: link.createdAt ? new Date(link.createdAt) : (s.createdAt ? new Date(s.createdAt) : new Date())
+          });
+        });
+      }
+
+      // 3. Payments
+      if (Array.isArray(s.payments)) {
+        s.payments.forEach((pay) => {
+          logs.push({
+            studentId: s._id,
+            studentUniqueId: s.id,
+            userName: s.sdeName || s.createdBy || "System",
+            userRole: "SDE",
+            action: "Payment Added",
+            details: {
+              amount: pay.amount,
+              mode: pay.mode || "Payment Link",
+              refId: pay.refId
+            },
+            timestamp: pay.paidDate ? new Date(pay.paidDate) : (s.createdAt ? new Date(s.createdAt) : new Date())
+          });
+        });
+      }
+
+      // 4. Order Punched
+      if (s.orderPunched && s.orderPunchedAt) {
+        logs.push({
+          studentId: s._id,
+          studentUniqueId: s.id,
+          userName: s.sdeName || s.createdBy || "System",
+          userRole: "SDE",
+          action: "Order Punched",
+          details: {
+            course: s.course,
+            batch: s.batch,
+            saleValue: s.saleValue,
+            paidAmount: s.paidAmount,
+            outstanding: s.outstanding,
+            demoDoneBy: s.demoDoneBy
+          },
+          timestamp: s.orderPunchedAt ? new Date(s.orderPunchedAt) : (s.createdAt ? new Date(s.createdAt) : new Date())
+        });
+      }
+
+      // 5. Enrolled
+      if (s.status === "Enrolled" && s.enrolledAt) {
+        logs.push({
+          studentId: s._id,
+          studentUniqueId: s.id,
+          userName: s.manager || s.reportedTo || "System",
+          userRole: "Manager",
+          action: "Student Enrolled",
+          details: {
+            course: s.course,
+            batch: s.batch
+          },
+          timestamp: s.enrolledAt ? new Date(s.enrolledAt) : (s.createdAt ? new Date(s.createdAt) : new Date())
+        });
+      }
+
+      // 6. Cancelled
+      if (s.status === "Cancelled" && s.cancelledAt) {
+        logs.push({
+          studentId: s._id,
+          studentUniqueId: s.id,
+          userName: s.manager || s.reportedTo || "System",
+          userRole: "Manager",
+          action: "Student Registration Cancelled",
+          details: {
+            remarks: s.internalRemarks
+          },
+          timestamp: s.cancelledAt ? new Date(s.cancelledAt) : (s.createdAt ? new Date(s.createdAt) : new Date())
+        });
+      }
+
+      // 7. Dropped
+      if (s.dropped && s.droppedAt) {
+        logs.push({
+          studentId: s._id,
+          studentUniqueId: s.id,
+          userName: s.manager || s.reportedTo || "System",
+          userRole: "Manager",
+          action: "Student Dropped",
+          details: {
+            remarks: s.internalRemarks
+          },
+          timestamp: s.droppedAt ? new Date(s.droppedAt) : (s.createdAt ? new Date(s.createdAt) : new Date())
+        });
+      }
+
+      // 8. MIS Approved
+      if (s.misStatus === "approved" && s.misApprovedAt) {
+        logs.push({
+          studentId: s._id,
+          studentUniqueId: s.id,
+          userName: s.manager || s.reportedTo || "System",
+          userRole: "Manager",
+          action: "MIS Approved",
+          details: {
+            remarks: s.internalRemarks
+          },
+          timestamp: s.misApprovedAt ? new Date(s.misApprovedAt) : (s.createdAt ? new Date(s.createdAt) : new Date())
+        });
+      }
+
+      // 9. Onboarding Submitted
+      if (s.onboardingSubmitted) {
+        logs.push({
+          studentId: s._id,
+          studentUniqueId: s.id,
+          userName: s.sdeName || s.createdBy || "System",
+          userRole: "SDE",
+          action: "Onboarding Submitted",
+          details: {
+            comments: s.onboardingComments,
+            onboardingDate: s.onboardingDate,
+            verifications: (s.onboardingVerifications || []).map(v => `${v.item}: ${v.verified ? "Verified" : "Not Verified"}`)
+          },
+          timestamp: s.onboardingSubmittedAt ? new Date(s.onboardingSubmittedAt) : (s.onboardingDate ? new Date(s.onboardingDate) : (s.createdAt ? new Date(s.createdAt) : new Date()))
+        });
+      }
+
+      // 10. Orientation Completed
+      if (s.orientationCompleted) {
+        logs.push({
+          studentId: s._id,
+          studentUniqueId: s.id,
+          userName: s.sdeName || s.createdBy || "System",
+          userRole: "SDE",
+          action: "Orientation Completed",
+          details: {
+            orientationDate: s.orientationDate,
+            orientationLink: s.orientationLink,
+            recordedLink: s.recordedLink,
+            remarks: s.internalRemarks
+          },
+          timestamp: s.orientationCompletedAt ? new Date(s.orientationCompletedAt) : (s.orientationDate ? new Date(s.orientationDate) : (s.createdAt ? new Date(s.createdAt) : new Date()))
+        });
+      }
+
+      // 11. Lead Transferred
+      if (Array.isArray(s.transferHistory)) {
+        s.transferHistory.forEach((t) => {
+          logs.push({
+            studentId: s._id,
+            studentUniqueId: s.id,
+            userName: t.transferredBy?.name || "System",
+            userRole: "Manager",
+            action: "Lead Transferred",
+            details: {
+              fromUser: t.fromUserId?.name || "Unassigned",
+              toUser: t.toUserId?.name || "Unknown"
+            },
+            timestamp: t.transferredAt ? new Date(t.transferredAt) : (s.createdAt ? new Date(s.createdAt) : new Date())
+          });
+        });
+      }
+
+      // 12. Call Recordings
+      if (Array.isArray(s.callRecordings)) {
+        s.callRecordings.forEach((rec) => {
+          logs.push({
+            studentId: s._id,
+            studentUniqueId: s.id,
+            userName: rec.uploadedBy || "System",
+            userRole: "SDE",
+            action: "Call Recording Uploaded",
+            details: {
+              fileName: rec.fileName,
+              url: rec.url
+            },
+            timestamp: rec.uploadedAt ? new Date(rec.uploadedAt) : (s.createdAt ? new Date(s.createdAt) : new Date())
+          });
+        });
+      }
+
+      if (logs.length > 0) {
+        await ActivityLog.insertMany(logs);
+        logCount += logs.length;
+      }
+    }
+  }
+  if (logCount > 0) {
+    console.log(`  -> backfilled ${logCount} ActivityLog entries for existing students.`);
   }
 
   console.log("Done. Log in with phone 9998887766 + password: skillit@123");

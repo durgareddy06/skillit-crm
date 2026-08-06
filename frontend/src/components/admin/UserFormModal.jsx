@@ -6,6 +6,7 @@ import { RotateCcw, Trash2, Archive as ArchiveIcon } from "lucide-react";
 import { listRoles } from "../../api/admin";
 import { sortRoles } from "../../config/roles";
 import { useAuth } from "../../context/AuthContext";
+import { isSdeDesignation } from "../../lib/userHierarchy";
 
 function designationKey(value = "") {
   return String(value).trim().toLowerCase().replace(/\s+/g, "").replace(/\./g, "");
@@ -116,7 +117,7 @@ export default function UserFormModal({ open, onClose, onSave, onArchive, onRese
                 >
                   {user.status === "Active" ? "Inactive" : "Active"}
                 </Button>
-                {user?.id !== currentUser?.id && (
+                {user?.id !== currentUser?.id && !isSdeDesignation(user.designation || user.role) && (
                   <Button variant="danger" onClick={() => onArchive?.(user)}>
                     <ArchiveIcon className="h-4 w-4" /> Archive
                   </Button>

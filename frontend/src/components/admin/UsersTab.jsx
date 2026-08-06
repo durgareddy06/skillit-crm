@@ -3,6 +3,7 @@ import DataTable from "../DataTable";
 import UserFormModal from "./UserFormModal";
 import * as adminApi from "../../api/admin";
 import { useAuth } from "../../context/AuthContext";
+import { isSdeDesignation } from "../../lib/userHierarchy";
 
 const ROLE_PILL_COLORS = [
   "bg-indigo-100 text-indigo-700",
@@ -48,6 +49,10 @@ const UsersTab = forwardRef(function UsersTab({ users, loading, search, onRefres
   };
 
   const handleArchive = async (u) => {
+    if (isSdeDesignation(u.designation || u.role)) {
+      window.alert("SDE accounts cannot be archived or deleted.");
+      return;
+    }
     if (!window.confirm(`Archive user "${u.name}"?`)) return;
     await adminApi.archiveUser(u.id);
     setModalOpen(false);
@@ -101,7 +106,7 @@ const UsersTab = forwardRef(function UsersTab({ users, loading, search, onRefres
         emptyText={loading ? "Loading users…" : "No users yet. Use the + button to create one."}
         rowMenu={(r) => {
           const menu = [{ label: "Edit", onClick: () => openEdit(r) }];
-          if (r.id !== currentUser?.id) {
+          if (r.id !== currentUser?.id && !isSdeDesignation(r.designation || r.role)) {
             menu.push({ label: "Archive", onClick: () => handleArchive(r) });
           }
           return menu;

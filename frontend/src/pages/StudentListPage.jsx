@@ -15,6 +15,7 @@ import {
   Zap,
   FileText,
   Mail,
+  Edit2,
 } from "lucide-react";
 import Topbar from "../components/Topbar";
 import DataTable from "../components/DataTable";
@@ -1395,6 +1396,23 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
         rowMenu={
           isStudentModule
             ? (row) => ([
+                {
+                  label: "Edit details",
+                  icon: <Edit2 className="h-4 w-4" />,
+                  disabled: !canUpdateStudent,
+                  title: canUpdateStudent ? undefined : "Update access is disabled for this role",
+                  onClick: () => {
+                    setEditDraft({
+                      primaryContactName: row.primaryContactName || "",
+                      contactNumber: row.contactNumber || "",
+                      email: row.email || "",
+                      graduatedBranch: row.graduatedBranch || "",
+                      graduationYear: row.graduationYear || "",
+                      category: row.category || "Fresher",
+                    });
+                    setExpandedId(row.id);
+                  },
+                },
                 {
                   label: "Drop student",
                   icon: <Trash2 className="h-4 w-4" />,
