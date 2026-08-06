@@ -54,8 +54,15 @@ function getAudioUrl(audioPath) {
 
   if (audioPath.startsWith("http://") || audioPath.startsWith("https://")) {
     const isLive = window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
-    if (isLive && audioPath.includes("localhost:4000")) {
-      return audioPath.replace("http://localhost:4000", backendOrigin);
+    if (isLive) {
+      let resolvedPath = audioPath;
+      if (audioPath.includes("localhost:4000")) {
+        resolvedPath = audioPath.replace("http://localhost:4000", backendOrigin);
+      }
+      if (window.location.protocol === "https:" && resolvedPath.startsWith("http://")) {
+        resolvedPath = resolvedPath.replace(/^http:\/\//i, "https://");
+      }
+      return resolvedPath;
     }
     return audioPath;
   }

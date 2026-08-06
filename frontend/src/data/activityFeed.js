@@ -33,11 +33,17 @@ function fmtDateTime(raw) {
   // ISO: "2026-07-24T12:34:56.000Z"
   const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
   if (isoMatch) {
-    const [, year, month, day, hh, mm] = isoMatch;
-    const h = Number(hh);
-    const ampm = h >= 12 ? "PM" : "AM";
-    const h12 = h % 12 || 12;
-    return `${Number(day)} ${MONTHS[Number(month) - 1]} ${year} - ${h12}:${mm}${ampm}`;
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      const day = parsed.getDate();
+      const month = parsed.getMonth();
+      const year = parsed.getFullYear();
+      const h = parsed.getHours();
+      const mm = String(parsed.getMinutes()).padStart(2, "0");
+      const ampm = h >= 12 ? "PM" : "AM";
+      const h12 = h % 12 || 12;
+      return `${day} ${MONTHS[month]} ${year} - ${h12}:${mm}${ampm}`;
+    }
   }
   
   // DD-MM-YYYY (legacy stored date)
