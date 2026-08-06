@@ -20,6 +20,7 @@ import { userHasPermission } from "../utils/permissions.js";
 import { isSdeDesignation, isManagerDesignation, isSrManagerDesignation } from "../utils/userHierarchy.js";
 import { createRazorpayPaymentLink, cancelRazorpayPaymentLink } from "../services/paymentService.js";
 import PaymentTransaction from "../models/PaymentTransaction.js";
+import UserTransferHistory from "../models/UserTransferHistory.js";
 import { getAccessibleUserIds } from "../utils/authorization.js";
 
 const normalize = (value = "") => String(value).trim().toLowerCase().replace(/[\s._-]+/g, "");
@@ -376,6 +377,22 @@ export async function createStudent(req, res) {
     reportingHierarchyIds = await getAncestorManagerIds(creatorId);
   }
 
+  let teamId = null;
+  let teamName = "";
+  let assignmentTimestamp = null;
+  if (creatorId) {
+    const sdeTeam = await Team.findOne({ members: creatorId }).lean();
+    if (sdeTeam) {
+      teamId = sdeTeam._id;
+      teamName = sdeTeam.name;
+      const latestTransfer = await UserTransferHistory.findOne({
+        userId: creatorId,
+        toTeamId: sdeTeam._id
+      }).sort({ transferredAt: -1 }).lean();
+      assignmentTimestamp = latestTransfer ? latestTransfer.transferredAt : sdeTeam.createdAt;
+    }
+  }
+
   const student = await Student.create({
     id,
     customerName: b.customerName,
@@ -438,6 +455,9 @@ export async function createStudent(req, res) {
     reportedTo: b.reportedTo || reportingManagerName || currentUser?.name || req.user?.name || "System",
     reportedToId: b.reportedToId || reportingManagerId || null,
     reportingHierarchyIds,
+    teamId: b.teamId || teamId || null,
+    teamName: b.teamName || teamName || "",
+    assignmentTimestamp: b.assignmentTimestamp || assignmentTimestamp || new Date(),
     department: b.department || (String(req.user?.designation || "").toLowerCase().includes("mis") ? "Operations" : "Sales"),
   });
 
@@ -900,6 +920,22 @@ export async function transferStudent(req, res) {
   student.reportedTo = reportingManagerName;
   student.manager = reportingManagerName;
   student.reportingHierarchyIds = reportingHierarchyIds;
+
+  // Resolve team & assignment timestamp for target user
+  const targetTeam = await Team.findOne({ members: targetUser._id }).lean();
+  const targetTeamId = targetTeam ? targetTeam._id : null;
+  const targetTeamName = targetTeam ? targetTeam.name : "";
+  
+  const latestTransfer = targetTeam ? await UserTransferHistory.findOne({
+    userId: targetUser._id,
+    toTeamId: targetTeam._id
+  }).sort({ transferredAt: -1 }).lean() : null;
+  
+  const targetAssignmentTimestamp = latestTransfer ? latestTransfer.transferredAt : (targetTeam ? targetTeam.createdAt : new Date());
+
+  student.teamId = targetTeamId;
+  student.teamName = targetTeamName;
+  student.assignmentTimestamp = targetAssignmentTimestamp;
 
   await student.save();
   emitStudentUpdate(req, student);

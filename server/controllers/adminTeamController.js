@@ -1,7 +1,50 @@
 import mongoose from "mongoose";
 import Team from "../models/Team.js";
 import User from "../models/User.js";
+import UserTransferHistory from "../models/UserTransferHistory.js";
 import { isSdeDesignation } from "../utils/userHierarchy.js";
+
+async function logUserTeamChange(userId, toTeamId, actorUser) {
+  const fromTeam = await Team.findOne({ members: userId }).lean();
+  const fromTeamId = fromTeam?._id || null;
+  const targetTeamId = toTeamId || null;
+  
+  if (String(fromTeamId) === String(targetTeamId)) {
+    return;
+  }
+  
+  let toTeam = null;
+  if (targetTeamId) {
+    toTeam = await Team.findById(targetTeamId).lean();
+  }
+  
+  let fromManagerName = "";
+  if (fromTeam?.manager) {
+    const mgr = await User.findById(fromTeam.manager).select("name").lean();
+    fromManagerName = mgr?.name || "";
+  }
+  
+  let toManagerName = "";
+  if (toTeam?.manager) {
+    const mgr = await User.findById(toTeam.manager).select("name").lean();
+    toManagerName = mgr?.name || "";
+  }
+  
+  await UserTransferHistory.create({
+    userId,
+    fromTeamId,
+    fromTeamName: fromTeam?.name || "No Team",
+    toTeamId: targetTeamId,
+    toTeamName: toTeam?.name || "No Team",
+    fromManagerId: fromTeam?.manager || null,
+    fromManagerName,
+    toManagerId: toTeam?.manager || null,
+    toManagerName,
+    transferredBy: actorUser?.name || "Admin",
+    transferredById: actorUser?.id || actorUser?._id || null,
+    transferredAt: new Date(),
+  });
+}
 
 async function shapeTeam(doc) {
   let managerName = "";
@@ -142,6 +185,19 @@ export async function assignUsers(req, res) {
     });
   }
 
+  const previousMembers = (team.members || []).map((m) => String(m));
+  const newMembers = nextMembers.map((m) => String(m));
+
+  const removedUsers = previousMembers.filter((m) => !newMembers.includes(m));
+  const addedUsers = newMembers.filter((m) => !previousMembers.includes(m));
+
+  for (const userId of removedUsers) {
+    await logUserTeamChange(userId, null, req.user);
+  }
+  for (const userId of addedUsers) {
+    await logUserTeamChange(userId, team._id, req.user);
+  }
+
   team.members = nextMembers.map((memberId) => new mongoose.Types.ObjectId(memberId));
   team.updatedBy = req.user?.name || "Admin";
   await team.save();
@@ -183,6 +239,10 @@ export async function transferTeamMembers(req, res) {
 
   const memberIds = fromTeam.members || [];
   if (memberIds.length > 0) {
+    for (const userId of memberIds) {
+      await logUserTeamChange(userId, toTeamId, req.user);
+    }
+
     // 1. Add members to the destination team
     const existingMembers = new Set((toTeam.members || []).map((m) => String(m)));
     for (const mId of memberIds) {

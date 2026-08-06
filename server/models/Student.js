@@ -123,6 +123,9 @@ const studentSchema = new mongoose.Schema(
     reportedTo: String,
     reportedToId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     reportingHierarchyIds: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], default: [] },
+    teamId: { type: mongoose.Schema.Types.ObjectId, ref: "Team", default: null },
+    teamName: { type: String, default: "" },
+    assignmentTimestamp: { type: Date, default: null },
     department: String,
 
     passwordHash: { type: String, default: null },

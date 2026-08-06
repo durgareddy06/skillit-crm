@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { connectDB } from "./config/db.js";
 import User from "./models/User.js";
 import Student from "./models/Student.js";
+import Team from "./models/Team.js";
 import Counter from "./models/Counter.js";
 import Module from "./models/Module.js";
 import Role from "./models/Role.js";
@@ -116,6 +117,36 @@ async function run() {
   }
   if (studentsMigrated > 0) {
     console.log(`  -> backfilled reportingHierarchyIds for ${studentsMigrated} student(s).`);
+  }
+
+  console.log("Backfilling teamId, teamName, and assignmentTimestamp for existing students...");
+  const studentsToBackfill = await Student.find({
+    $or: [
+      { teamId: { $exists: false } },
+      { teamId: null },
+      { assignmentTimestamp: { $exists: false } },
+      { assignmentTimestamp: null }
+    ]
+  });
+
+  let backfilledCount = 0;
+  for (const student of studentsToBackfill) {
+    let team = null;
+    if (student.reportedToId) {
+      team = await Team.findOne({ manager: student.reportedToId }).lean();
+    }
+    if (!team && student.createdById) {
+      team = await Team.findOne({ members: student.createdById }).lean();
+    }
+    
+    student.teamId = team?._id || null;
+    student.teamName = team?.name || "No Team";
+    student.assignmentTimestamp = student.createdAt ? new Date(student.createdAt) : new Date();
+    await student.save();
+    backfilledCount++;
+  }
+  if (backfilledCount > 0) {
+    console.log(`  -> backfilled teamId/teamName/assignmentTimestamp for ${backfilledCount} student(s).`);
   }
 
   console.log("Done. Log in with phone 9998887766 + password: skillit@123");

@@ -96,18 +96,35 @@ export async function buildVisibilityFilter(user) {
   const accessibleIds = await getAccessibleUserIds(user);
   if (accessibleIds === null) return {};
 
-  const objectIds = accessibleIds
-    .filter(id => mongoose.isValidObjectId(id))
-    .map(id => new mongoose.Types.ObjectId(id));
+  const userIdStr = String(user.id || user._id || "");
+  const userIdObj = mongoose.isValidObjectId(userIdStr) ? new mongoose.Types.ObjectId(userIdStr) : null;
 
-  // Retrieve names of all accessible users to support legacy name-based ownership checks
-  const users = await User.find({ _id: { $in: objectIds } }).select("name").lean();
-  const accessibleNames = users.map(u => u.name).filter(Boolean);
+  // Resolve if the user manages any active team. If not, they are a leaf (SDE).
+  const isLeaf = userIdObj ? !(await Team.exists({ manager: userIdObj, status: "Active" })) : true;
 
+  if (isLeaf) {
+    // SDE / Leaf node can only see their own sales.
+    return {
+      $or: [
+        ...(userIdObj ? [{ createdById: userIdObj }] : []),
+        { createdBy: user.name }
+      ]
+    };
+  }
+
+  // Managers, Senior Managers, AGMs, VPs, etc. (Hierarchical non-leaf roles):
+  // They should see:
+  // 1. Sales they created themselves.
+  // 2. Sales where they were in the reporting chain at the time of creation.
   return {
     $or: [
-      { createdById: { $in: objectIds } },
-      { createdBy: { $in: accessibleNames } }
+      ...(userIdObj ? [
+        { createdById: userIdObj },
+        { reportedToId: userIdObj },
+        { reportingHierarchyIds: userIdObj }
+      ] : []),
+      { createdBy: user.name },
+      { reportedTo: user.name }
     ]
   };
 }
@@ -138,20 +155,35 @@ export async function canAccessStudentHelper(user, student) {
   const accessibleIds = await getAccessibleUserIds(user);
   if (accessibleIds === null) return true;
 
-  // Check matching by createdById
-  const createdByIdStr = student.createdById ? String(student.createdById) : null;
-  if (createdByIdStr && accessibleIds.includes(createdByIdStr)) {
+  const userIdStr = String(user.id || user._id || "");
+  const userIdObj = mongoose.isValidObjectId(userIdStr) ? new mongoose.Types.ObjectId(userIdStr) : null;
+
+  // 1. Check if user is the creator of the record
+  if (student.createdById && String(student.createdById) === userIdStr) {
+    return true;
+  }
+  if (student.createdBy && student.createdBy === user.name) {
     return true;
   }
 
-  // Legacy fallback: check createdBy name matching accessible names
-  if (student.createdBy) {
-    const objectIds = accessibleIds
-      .filter(id => mongoose.isValidObjectId(id))
-      .map(id => new mongoose.Types.ObjectId(id));
-    const users = await User.find({ _id: { $in: objectIds } }).select("name").lean();
-    const accessibleNames = users.map(u => u.name).filter(Boolean);
-    if (accessibleNames.includes(student.createdBy)) {
+  // Check if user is a leaf (SDE). SDEs can only see their own sales.
+  const isLeaf = userIdObj ? !(await Team.exists({ manager: userIdObj, status: "Active" })) : true;
+  if (isLeaf) {
+    return false;
+  }
+
+  // 2. For managers/hierarchical supervisors, check if they are in the reporting hierarchy at the time of creation
+  if (student.reportedToId && String(student.reportedToId) === userIdStr) {
+    return true;
+  }
+  if (student.reportedTo && student.reportedTo === user.name) {
+    return true;
+  }
+  if (Array.isArray(student.reportingHierarchyIds)) {
+    const hasInHierarchy = student.reportingHierarchyIds.some(
+      (hId) => String(hId) === userIdStr
+    );
+    if (hasInHierarchy) {
       return true;
     }
   }
