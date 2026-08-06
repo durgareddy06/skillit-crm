@@ -15,7 +15,6 @@ import {
   Zap,
   FileText,
   Mail,
-  Edit2,
 } from "lucide-react";
 import Topbar from "../components/Topbar";
 import DataTable from "../components/DataTable";
@@ -404,9 +403,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
   const [query, setQuery] = useState("");
   const [filterValues, setFilterValues] = useState({});
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
-  const [expandedId, setExpandedId] = useState(null);
-  const [editDraft, setEditDraft] = useState({});
-  const [savingEdit, setSavingEdit] = useState(false);
+
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showDateMenu, setShowDateMenu] = useState(false);
   const [showPaymentLink, setShowPaymentLink] = useState(false);
@@ -672,17 +669,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, page]);
 
-  const handleSave = async (row) => {
-    if (!canUpdateStudent) return;
-    setSavingEdit(true);
-    try {
-      await updateStudent(row.id, editDraft);
-      await refresh();
-      setExpandedId(null);
-    } finally {
-      setSavingEdit(false);
-    }
-  };
+
 
   const openPaymentLink = (row) => {
     if (!canCreatePaymentLink) return;
@@ -1392,27 +1379,9 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
                   ? "min-w-[2600px]"
                   : ""
           }
-        expandedId={isStudentModule && canUpdateStudent ? expandedId : null}
         rowMenu={
           isStudentModule
             ? (row) => ([
-                {
-                  label: "Edit details",
-                  icon: <Edit2 className="h-4 w-4" />,
-                  disabled: !canUpdateStudent,
-                  title: canUpdateStudent ? undefined : "Update access is disabled for this role",
-                  onClick: () => {
-                    setEditDraft({
-                      primaryContactName: row.primaryContactName || "",
-                      contactNumber: row.contactNumber || "",
-                      email: row.email || "",
-                      graduatedBranch: row.graduatedBranch || "",
-                      graduationYear: row.graduationYear || "",
-                      category: row.category || "Fresher",
-                    });
-                    setExpandedId(row.id);
-                  },
-                },
                 {
                   label: "Drop student",
                   icon: <Trash2 className="h-4 w-4" />,
@@ -1455,105 +1424,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
                 ].filter(Boolean))
               : undefined
         }
-        renderExpanded={isStudentModule && canUpdateStudent ? (row) => (
-          <div className="border-t border-slate-100 bg-[#FAFBFE] px-4 py-4">
-            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-slate-800">Student Details</h3>
-                <button
-                  type="button"
-                  onClick={() => setExpandedId(null)}
-                  className="text-sm text-slate-400 hover:text-slate-700"
-                >
-                  Close
-                </button>
-              </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <ExpandField label="Parent Name">
-                  <Input
-                    value={editDraft.primaryContactName || ""}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, primaryContactName: e.target.value }))}
-                  />
-                </ExpandField>
-                <ExpandField label="Contact Number">
-                  <PhoneInput
-                    value={editDraft.contactNumber || ""}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, contactNumber: e.target.value }))}
-                  />
-                </ExpandField>
-                <ExpandField label="Email">
-                  <Input
-                    value={editDraft.email || ""}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, email: e.target.value }))}
-                  />
-                </ExpandField>
-                <ExpandField label="Graduated Branch">
-                  <Input
-                    value={editDraft.graduatedBranch || ""}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, graduatedBranch: e.target.value }))}
-                  />
-                </ExpandField>
-                <ExpandField label="Graduation Year">
-                  <Input
-                    value={editDraft.graduationYear || ""}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, graduationYear: e.target.value }))}
-                  />
-                </ExpandField>
-                <ExpandField label="Category">
-                  <Select
-                    value={editDraft.category || ""}
-                    onChange={(e) => setEditDraft((d) => ({ ...d, category: e.target.value }))}
-                  >
-                    {[...new Set([...(CATEGORY_OPTIONS || []), editDraft.category].filter(Boolean))].map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Select>
-                </ExpandField>
-              </div>
-
-              <div className="mt-6 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  disabled={!canCreatePaymentLink}
-                  onClick={() => {
-                    if (!canCreatePaymentLink) return;
-                    openPaymentLink(row);
-                  }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg disabled:cursor-not-allowed disabled:bg-blue-300 disabled:hover:bg-blue-300"
-                  title={canCreatePaymentLink ? undefined : "Create access is disabled for this role"}
-                >
-                  <Link2 className="h-4 w-4 text-white" />
-                  Create Payment Link
-                </button>
-                <button
-                  type="button"
-                  disabled={!canDeleteStudent}
-                  onClick={() => {
-                    if (!canDeleteStudent) return;
-                    setDropTarget(row);
-                  }}
-                  className="inline-flex items-center gap-2 rounded-xl border-2 border-red-500 bg-white px-5 py-3 text-sm font-semibold text-red-500 transition-all hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white disabled:hover:text-red-500"
-                  title={canDeleteStudent ? undefined : "Delete access is disabled for this role"}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Drop Student
-                </button>
-                <Button
-                  loading={savingEdit}
-                  onClick={() => handleSave(row)}
-                  disabled={!canUpdateStudent}
-                  title={canUpdateStudent ? undefined : "Update access is disabled for this role"}
-                >
-                  <Save className="h-4 w-4" />
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          </div>
-        ) : undefined}
       />
 
       <Modal open={showPaymentLink} onClose={() => setShowPaymentLink(false)} title="Create Payment Link">
