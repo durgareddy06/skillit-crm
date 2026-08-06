@@ -13,21 +13,19 @@ async function cleanupLegacyRoleIndexes() {
 
 async function cleanupLegacyPaymentIndexes() {
   try {
-    await mongoose.connection.collection("paymenttransactions").dropIndex("orderId_1");
-    console.log("Removed legacy paymenttransactions.orderId_1 index.");
-  } catch (err) {
-    if (err?.codeName !== "IndexNotFound") {
-      console.warn("Could not remove legacy paymenttransactions.orderId_1 index:", err.message);
+    const collection = mongoose.connection.collection("paymenttransactions");
+    const indexes = await collection.indexes();
+    for (const index of indexes) {
+      const keys = Object.keys(index.key);
+      const hasConflictField = keys.includes("orderId") || keys.includes("razorpayPaymentLinkId") || keys.includes("paymentId");
+      if (index.unique && hasConflictField) {
+        console.log(`Dropping unique index ${index.name} on paymenttransactions to prevent duplicate key errors...`);
+        await collection.dropIndex(index.name);
+        console.log(`Successfully dropped unique index ${index.name}.`);
+      }
     }
-  }
-
-  try {
-    await mongoose.connection.collection("paymenttransactions").dropIndex("razorpayPaymentLinkId_1");
-    console.log("Removed legacy paymenttransactions.razorpayPaymentLinkId_1 index.");
   } catch (err) {
-    if (err?.codeName !== "IndexNotFound") {
-      console.warn("Could not remove legacy paymenttransactions.razorpayPaymentLinkId_1 index:", err.message);
-    }
+    console.warn("Could not cleanup legacy payment indexes dynamically:", err.message);
   }
 }
 
