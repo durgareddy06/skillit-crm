@@ -474,43 +474,60 @@ export async function generatePaymentLink(req, res) {
       });
     }
 
-    const linkId = `plink_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    
-    // Call Razorpay API to generate the hosted payment link
+    const MAX_LIMIT = 50000;
+    const chunks = [];
+    let remaining = amount;
+    while (remaining > 0) {
+      const chunk = Math.min(remaining, MAX_LIMIT);
+      chunks.push(chunk);
+      remaining -= chunk;
+    }
+
+    const createdLinks = [];
+    const baseLinkId = `plink_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const customer = {
       name: student.customerName,
       email: student.email,
       contact: student.contactNumber ? student.contactNumber.replace(/[^0-9+]/g, "") : undefined,
     };
-    
-    const razorpayLink = await createRazorpayPaymentLink(amount, linkId, customer, student.id);
-    const url = razorpayLink.short_url;
 
-    // Create the transaction log in our DB immediately
-    await PaymentTransaction.create({
-      studentId: student._id,
-      studentUniqueId: student.id,
-      paymentLinkId: linkId,
-      razorpayPaymentLinkId: razorpayLink.id || undefined,
-      orderId: razorpayLink.order_id || undefined,
-      amount,
-      currency: "INR",
-      status: "created",
-    });
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkAmount = chunks[i];
+      const linkId = chunks.length > 1 ? `${baseLinkId}_${i + 1}` : baseLinkId;
+      
+      const razorpayLink = await createRazorpayPaymentLink(chunkAmount, linkId, customer, student.id);
+      const url = razorpayLink.short_url;
 
-    const createdAt = new Date().toLocaleString("en-GB");
+      // Create the transaction log in our DB immediately
+      await PaymentTransaction.create({
+        studentId: student._id,
+        studentUniqueId: student.id,
+        paymentLinkId: linkId,
+        razorpayPaymentLinkId: razorpayLink.id || undefined,
+        orderId: razorpayLink.order_id || undefined,
+        amount: chunkAmount,
+        currency: "INR",
+        status: "created",
+      });
+
+      const createdAt = new Date().toLocaleString("en-GB");
+      createdLinks.push({
+        linkId,
+        amount: chunkAmount,
+        status: "Pending",
+        url,
+        createdAt,
+      });
+    }
+
     student.paymentLinks = Array.isArray(student.paymentLinks) ? student.paymentLinks : [];
-    student.paymentLinks.push({
-      linkId,
-      amount,
-      status: "Pending",
-      url,
-      createdAt,
-    });
+    student.paymentLinks.push(...createdLinks);
+    
     student.paymentLinkGenerated = true;
     student.paymentLinkAmount = amount;
     student.paymentLinkStatus = "Pending";
-    student.paymentLinkUrl = url;
+    student.paymentLinkUrl = createdLinks[0].url;
+    
     await student.save();
     emitStudentUpdate(req, student);
 
