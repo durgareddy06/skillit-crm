@@ -183,8 +183,8 @@ async function run() {
           logs.push({
             studentId: s._id,
             studentUniqueId: s.id,
-            userName: s.sdeName || s.createdBy || "System",
-            userRole: "SDE",
+            userName: link.generatedBy || s.sdeName || s.createdBy || "System",
+            userRole: link.generatedBy ? "User" : "SDE",
             action: "Payment Link Generated",
             details: {
               amount: link.amount,
@@ -202,8 +202,8 @@ async function run() {
           logs.push({
             studentId: s._id,
             studentUniqueId: s.id,
-            userName: s.sdeName || s.createdBy || "System",
-            userRole: "SDE",
+            userName: pay.addedBy || s.sdeName || s.createdBy || "System",
+            userRole: pay.addedBy ? "User" : "SDE",
             action: "Payment Added",
             details: {
               amount: pay.amount,
@@ -220,8 +220,8 @@ async function run() {
         logs.push({
           studentId: s._id,
           studentUniqueId: s.id,
-          userName: s.sdeName || s.createdBy || "System",
-          userRole: "SDE",
+          userName: s.orderPunchedBy || s.sdeName || s.createdBy || "System",
+          userRole: s.orderPunchedBy ? "User" : "SDE",
           action: "Order Punched",
           details: {
             course: s.course,
@@ -240,8 +240,8 @@ async function run() {
         logs.push({
           studentId: s._id,
           studentUniqueId: s.id,
-          userName: s.manager || s.reportedTo || "System",
-          userRole: "Manager",
+          userName: s.enrolledBy || s.sdeName || s.createdBy || "System",
+          userRole: "SDE",
           action: "Student Enrolled",
           details: {
             course: s.course,
@@ -256,8 +256,8 @@ async function run() {
         logs.push({
           studentId: s._id,
           studentUniqueId: s.id,
-          userName: s.manager || s.reportedTo || "System",
-          userRole: "Manager",
+          userName: s.cancelledBy || s.manager || s.reportedTo || "System",
+          userRole: s.cancelledBy ? "User" : "Manager",
           action: "Student Registration Cancelled",
           details: {
             remarks: s.internalRemarks
@@ -271,8 +271,8 @@ async function run() {
         logs.push({
           studentId: s._id,
           studentUniqueId: s.id,
-          userName: s.manager || s.reportedTo || "System",
-          userRole: "Manager",
+          userName: s.droppedBy || s.manager || s.reportedTo || "System",
+          userRole: s.droppedBy ? "User" : "Manager",
           action: "Student Dropped",
           details: {
             remarks: s.internalRemarks
@@ -286,8 +286,8 @@ async function run() {
         logs.push({
           studentId: s._id,
           studentUniqueId: s.id,
-          userName: s.manager || s.reportedTo || "System",
-          userRole: "Manager",
+          userName: s.misApprovedBy || s.manager || s.reportedTo || "System",
+          userRole: "MIS Executive",
           action: "MIS Approved",
           details: {
             remarks: s.internalRemarks
@@ -301,8 +301,8 @@ async function run() {
         logs.push({
           studentId: s._id,
           studentUniqueId: s.id,
-          userName: s.sdeName || s.createdBy || "System",
-          userRole: "SDE",
+          userName: s.onboardingSubmittedBy || s.sdeName || s.createdBy || "System",
+          userRole: "Customer Support Executive",
           action: "Onboarding Submitted",
           details: {
             comments: s.onboardingComments,
@@ -318,8 +318,8 @@ async function run() {
         logs.push({
           studentId: s._id,
           studentUniqueId: s.id,
-          userName: s.sdeName || s.createdBy || "System",
-          userRole: "SDE",
+          userName: s.orientationCompletedBy || s.sdeName || s.createdBy || "System",
+          userRole: "Customer Support Executive",
           action: "Orientation Completed",
           details: {
             orientationDate: s.orientationDate,

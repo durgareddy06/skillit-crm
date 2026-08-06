@@ -538,6 +538,8 @@ export async function generatePaymentLink(req, res) {
       status: "Pending",
       url,
       createdAt,
+      generatedBy: req.user?.name || "System",
+      generatedById: req.user?._id || req.user?.id || null,
     });
     student.paymentLinkGenerated = true;
     student.paymentLinkAmount = amount;
@@ -674,6 +676,8 @@ export async function addPayment(req, res) {
     refId: loanId || `pay_${Date.now()}`,
     statementId: req.body?.statementId || "",
     settlementDate: req.body?.settlementDate || "",
+    addedBy: req.user?.name || "System",
+    addedById: req.user?._id || req.user?.id || null,
   };
 
   student.payments.push(paymentRecord);
@@ -727,6 +731,8 @@ export async function punchOrder(req, res) {
   student.reportedTo = req.body?.reportedTo || reportingManagerName || currentUser?.name || student.reportedTo || "";
   student.orderPunched = true;
   student.orderPunchedAt = new Date().toLocaleString("en-GB");
+  student.orderPunchedBy = currentUser?.name || req.user?.name || "";
+  student.orderPunchedById = currentUser?._id || req.user?._id || req.user?.id || null;
   student.status = "Pending";
   const emailQueue = checkAndQueueStatusEmails(student);
   await student.save();
@@ -767,6 +773,8 @@ export async function enrollStudent(req, res) {
   student.reportedTo = req.body?.reportedTo || reportingManagerName || currentUser?.name || student.reportedTo || "";
   student.orderPunched = true;
   student.enrolledAt = new Date().toLocaleString("en-GB");
+  student.enrolledBy = currentUser?.name || req.user?.name || "";
+  student.enrolledById = currentUser?._id || req.user?._id || req.user?.id || null;
   student.status = "Enrolled";
   student.misStatus = null;
   await student.save();
@@ -786,6 +794,8 @@ export async function cancelStudent(req, res) {
   }
   student.status = "Cancelled";
   student.cancelledAt = new Date().toLocaleString("en-GB");
+  student.cancelledBy = req.user?.name || "";
+  student.cancelledById = req.user?._id || req.user?.id || null;
   await student.save();
   await logActivity(student, req, "Student Registration Cancelled", {
     remarks: student.internalRemarks
@@ -802,6 +812,8 @@ export async function misApprove(req, res) {
   }
   student.misStatus = "approved";
   student.misApprovedAt = new Date().toLocaleString("en-GB");
+  student.misApprovedBy = req.user?.name || "";
+  student.misApprovedById = req.user?._id || req.user?.id || null;
   const emailQueue = checkAndQueueStatusEmails(student);
   await student.save();
   await logActivity(student, req, "MIS Approved", {
@@ -825,6 +837,8 @@ export async function misCancel(req, res) {
   student.status = "Cancelled";
   student.misStatus = null;
   student.cancelledAt = new Date().toLocaleString("en-GB");
+  student.cancelledBy = req.user?.name || "";
+  student.cancelledById = req.user?._id || req.user?.id || null;
   await student.save();
   await logActivity(student, req, "MIS Rejected/Escalated", {
     remarks: student.internalRemarks
@@ -842,6 +856,8 @@ export async function dropStudent(req, res) {
   student.dropped = true;
   student.status = "Dropped";
   student.droppedAt = new Date().toLocaleString("en-GB");
+  student.droppedBy = req.user?.name || "";
+  student.droppedById = req.user?._id || req.user?.id || null;
   await student.save();
   await logActivity(student, req, "Student Dropped", {
     remarks: student.internalRemarks
@@ -1047,9 +1063,11 @@ export async function editStudent(req, res) {
 
   if (student.onboardingSubmitted && (!originalOnboardingSubmitted || !student.onboardingSubmittedAt)) {
     student.onboardingSubmittedAt = student.onboardingSubmittedAt || new Date().toLocaleString("en-GB");
+    student.onboardingSubmittedBy = student.onboardingSubmittedBy || req.user?.name || "";
   }
   if (student.orientationCompleted && (!originalOrientationCompleted || !student.orientationCompletedAt)) {
     student.orientationCompletedAt = student.orientationCompletedAt || new Date().toLocaleString("en-GB");
+    student.orientationCompletedBy = student.orientationCompletedBy || req.user?.name || "";
   }
 
   student.customFields = normalizeCustomFields(req.body?.customFields ?? student.customFields);

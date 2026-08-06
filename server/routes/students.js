@@ -64,8 +64,14 @@ function requireStudentPermission(moduleKey, action) {
 function getStudentContext(student) {
   if (!student) return "student";
   if (student.status === "Cancelled") return "cancelled";
+  if (student.status === "Dropped") return "learners";
   if (student.status === "Enrolled") {
-    if (student.misStatus === "approved") return "enrolled";
+    if (student.misStatus === "approved") {
+      // If onboarding/orientation is active, resolve to those sub-stages
+      if (student.orientationCompleted) return "orientation";
+      if (student.onboardingSubmitted) return "onboarding";
+      return "enrolled";
+    }
     return "mis-approval";
   }
   if (student.status === "Pending" && student.orderPunched) return "pending";
@@ -176,18 +182,44 @@ function requireDetailStudentPermission() {
     if (!req.user) return res.status(401).json({ message: "Not authenticated" });
     if (normalizeStr(req.user.role) === "admin") return next();
 
-    let context = req.query.context || req.query.view || "student";
-    if (!ALL_STUDENT_MODULE_KEYS.includes(context) && context !== "tokens") {
-      context = "student";
-    }
+    const checkDetailPermission = async () => {
+      // Build a list of contexts to check. Start with the explicit query param,
+      // then fall back to the student's current lifecycle stage, and always
+      // include the base "student" module as a fallback.
+      const contextsToCheck = new Set(["student"]);
 
-    Promise.all([
-      userHasPermission(req.user, context, "details"),
-      userHasPermission(req.user, context, "create"),
-      userHasPermission(req.user, context, "update"),
-    ])
-      .then(([allowedDetails, allowedCreate, allowedUpdate]) => {
-        if (allowedDetails || allowedCreate || allowedUpdate) {
+      const explicitContext = req.query.context || req.query.view || null;
+      if (explicitContext && ALL_STUDENT_MODULE_KEYS.includes(explicitContext)) {
+        contextsToCheck.add(explicitContext);
+      }
+
+      if (req.params.id) {
+        const student = await Student.findOne({ id: req.params.id });
+        if (student) {
+          // Add the student's current lifecycle context
+          const resolvedContext = getStudentContext(student);
+          if (resolvedContext) contextsToCheck.add(resolvedContext);
+          // Also add onboarding/orientation when appropriate since CSEs work across both
+          if (student.onboardingSubmitted) contextsToCheck.add("onboarding");
+          if (student.orientationCompleted) contextsToCheck.add("orientation");
+        }
+      }
+
+      // Grant access if the user has details/create/update on ANY of the relevant modules
+      for (const ctx of contextsToCheck) {
+        const [hasDetails, hasCreate, hasUpdate] = await Promise.all([
+          userHasPermission(req.user, ctx, "details"),
+          userHasPermission(req.user, ctx, "create"),
+          userHasPermission(req.user, ctx, "update"),
+        ]);
+        if (hasDetails || hasCreate || hasUpdate) return true;
+      }
+      return false;
+    };
+
+    checkDetailPermission()
+      .then((allowed) => {
+        if (allowed) {
           return next();
         }
         return res.status(403).json({ message: "You don't have permission to do that" });

@@ -11,6 +11,8 @@ const paymentSchema = new mongoose.Schema(
     settlementDate: String,
     invoiceNumber: String,
     invoiceDate: String,
+    addedBy: { type: String, default: "" },
+    addedById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { _id: false }
 );
@@ -22,6 +24,8 @@ const paymentLinkSchema = new mongoose.Schema(
     status: String,
     url: String,
     createdAt: String,
+    generatedBy: { type: String, default: "" },
+    generatedById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { _id: false }
 );
@@ -113,6 +117,22 @@ const studentSchema = new mongoose.Schema(
     misApprovedAt: { type: String, default: "" },
     onboardingSubmittedAt: { type: String, default: "" },
     orientationCompletedAt: { type: String, default: "" },
+
+    // Track who performed each lifecycle action (name and ID of the logged-in user)
+    enrolledBy: { type: String, default: "" },
+    enrolledById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    misApprovedBy: { type: String, default: "" },
+    misApprovedById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    onboardingSubmittedBy: { type: String, default: "" },
+    onboardingSubmittedById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    orientationCompletedBy: { type: String, default: "" },
+    orientationCompletedById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    orderPunchedBy: { type: String, default: "" },
+    orderPunchedById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    cancelledBy: { type: String, default: "" },
+    cancelledById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    droppedBy: { type: String, default: "" },
+    droppedById: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 
     createdAt: String,
     createdBy: String,
