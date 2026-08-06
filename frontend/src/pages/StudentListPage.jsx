@@ -25,7 +25,7 @@ import { Field, Input, PhoneInput, Select, formatPhoneDisplay, todayDateInputVal
 import { listStudents, dropStudent, generatePaymentLink, updateStudent, getPaymentInvoice, getHierarchyFilters, cancelPaymentLink } from "../api/students";
 import { useAuth } from "../context/AuthContext";
 import { canUsePermission, hasActionPermission, hasPermission } from "../lib/permissions";
-import { canTransferLead } from "../lib/userHierarchy";
+import { canTransferLead, isSdeDesignation, isManagerDesignation, isSrManagerDesignation } from "../lib/userHierarchy";
 import TransferLeadModal from "../components/TransferLeadModal";
 import PaymentDetailsDrawer from "../components/PaymentDetailsDrawer";
 
@@ -280,11 +280,7 @@ function getModuleFilters(view, rows) {
   }
 }
 
-const normalizeDesignation = (v = "") => String(v).trim().toLowerCase().replace(/\s+/g, "");
-const isSde = (v) => normalizeDesignation(v) === "sde";
-const isManager = (v) => normalizeDesignation(v) === "manager";
-const isSrManager = (v) => normalizeDesignation(v) === "sr.manager" || normalizeDesignation(v) === "srmanager";
-const isAdminRole = (v) => normalizeDesignation(v) === "admin";
+const isAdminRole = (v) => String(v).trim().toLowerCase().replace(/[\s._-]+/g, "") === "admin";
 
 export default function StudentListPage({ title, subtitle = "Skillit Academy | 8639191169", view, emptyText }) {
   const { user } = useAuth();
@@ -292,7 +288,10 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
   const location = useLocation();
 
   const [hierarchyData, setHierarchyData] = useState({ levels: [], users: [], seniorManagers: [], managers: [], sdes: [] });
-  const [selections, setSelections] = useState({});
+  
+  const [selectedSrManager, setSelectedSrManager] = useState("");
+  const [selectedManager, setSelectedManager] = useState("");
+  const [selectedSde, setSelectedSde] = useState("");
 
   useEffect(() => {
     getHierarchyFilters()
@@ -302,60 +301,76 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
 
   // Reset hierarchy filters when the view/module changes
   useEffect(() => {
-    setSelections({});
+    setSelectedSrManager("");
+    setSelectedManager("");
+    setSelectedSde("");
   }, [view]);
 
-  // Designations that should NOT appear as hierarchy filter dropdowns
-  const EXCLUDED_FILTER_LEVELS = useMemo(() => new Set([
-    "misexecutive",
-    "customersupportexecutive",
-    "customersupport",
-    "relationshipmanager",
-    "admin",
-  ]), []);
+  // Recursively gets all descendant user IDs of a given manager user
+  const getDescendantIds = useCallback((parentId, usersList) => {
+    if (!parentId) return [];
+    const descendants = [];
+    const queue = [parentId];
+    const visited = new Set([parentId]);
+    
+    while (queue.length > 0) {
+      const currId = queue.shift();
+      const children = usersList.filter(u => String(u.reportingTo) === String(currId));
+      for (const child of children) {
+        if (!visited.has(child.id)) {
+          visited.add(child.id);
+          descendants.push(child.id);
+          queue.push(child.id);
+        }
+      }
+    }
+    return descendants;
+  }, []);
 
-  // Resolve visible levels below the current user's role designation
-  const visibleLevels = useMemo(() => {
-    const levels = hierarchyData.levels || [];
-    const normalize = (v) => String(v).trim().toLowerCase().replace(/[\s._-]+/g, "");
+  // Memoized selectors for filtered lists based on chained selections
+  const filteredManagersForAdmin = useMemo(() => {
+    const allUsers = hierarchyData.users || [];
+    const managers = hierarchyData.managers || [];
+    if (!selectedSrManager) return managers;
+    
+    const descendants = getDescendantIds(selectedSrManager, allUsers);
+    return managers.filter(m => descendants.includes(m.id));
+  }, [hierarchyData.users, hierarchyData.managers, selectedSrManager, getDescendantIds]);
 
-    // Filter out designations not relevant to the sales hierarchy filter bar
-    const filteredLevels = levels.filter((lvl) => !EXCLUDED_FILTER_LEVELS.has(normalize(lvl)));
+  const filteredSdesForAdmin = useMemo(() => {
+    const sdes = hierarchyData.sdes || [];
+    
+    if (selectedManager) {
+      // Show SDs reporting to the selected manager
+      return sdes.filter(s => String(s.reportingTo) === String(selectedManager));
+    }
+    if (selectedSrManager) {
+      // Show SDs reporting to any manager in selected Sr. Manager's hierarchy
+      const managerIds = filteredManagersForAdmin.map(m => m.id);
+      return sdes.filter(s => managerIds.includes(s.reportingTo));
+    }
+    return sdes;
+  }, [hierarchyData.sdes, selectedSrManager, selectedManager, filteredManagersForAdmin]);
 
-    if (isAdminRole(user.role)) return filteredLevels;
-
-    const userDes = normalize(user.designation || user.role || "");
-    const userLvlIdx = filteredLevels.findIndex(lvl => normalize(lvl) === userDes);
-    if (userLvlIdx === -1) return [];
-    return filteredLevels.slice(userLvlIdx + 1);
-  }, [hierarchyData.levels, user, EXCLUDED_FILTER_LEVELS]);
+  const filteredSdesForSrManager = useMemo(() => {
+    const sdes = hierarchyData.sdes || [];
+    if (!selectedManager) return sdes;
+    return sdes.filter(s => String(s.reportingTo) === String(selectedManager));
+  }, [hierarchyData.sdes, selectedManager]);
 
   const hierarchyParams = useMemo(() => {
     const params = {};
-    let activeSelection = "";
-    let activeDes = "";
-
-    for (let i = visibleLevels.length - 1; i >= 0; i--) {
-      const lvl = visibleLevels[i];
-      if (selections[lvl]) {
-        activeSelection = selections[lvl];
-        activeDes = lvl.toLowerCase().replace(/[\s._-]+/g, "");
-        break;
-      }
-    }
-
+    const activeSelection = selectedSde || selectedManager || selectedSrManager;
     if (activeSelection) {
       params.hierarchyUserId = activeSelection;
       
       // Preserve backward compatibility params
-      if (activeDes === "sde") params.sdeId = activeSelection;
-      else if (activeDes === "manager") params.managerId = activeSelection;
-      else if (activeDes === "seniormanager" || activeDes === "srmanager" || activeDes === "sr.manager") {
-        params.seniorManagerId = activeSelection;
-      }
+      if (selectedSde) params.sdeId = selectedSde;
+      else if (selectedManager) params.managerId = selectedManager;
+      else if (selectedSrManager) params.seniorManagerId = selectedSrManager;
     }
     return params;
-  }, [selections, visibleLevels]);
+  }, [selectedSrManager, selectedManager, selectedSde]);
 
   const { rows, loading, err, refresh } = useStudentList(view, hierarchyParams);
 
@@ -765,12 +780,13 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
                       e.stopPropagation();
                       navigate(`/student/${r.studentId || r.id}?context=payment-link`);
                     }}
-                    className="inline-flex items-center rounded-full px-2 py-1 font-medium text-skillit transition-colors hover:bg-blue-50"
+                    className="inline-flex items-center rounded-full px-2 py-1 font-medium text-skillit transition-colors hover:bg-blue-50 max-w-full"
+                    title={r.customerName}
                   >
-                    {r.customerName}
+                    <span className="truncate">{r.customerName}</span>
                   </button>
                 ) : (
-                  <span className="font-medium text-slate-700 px-2 py-1">{r.customerName}</span>
+                  <span className="font-medium text-slate-700 px-2 py-1 truncate block" title={r.customerName}>{r.customerName}</span>
                 )
               ),
         },
@@ -790,7 +806,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="whitespace-nowrap text-skillit hover:underline"
+                className="block truncate text-skillit hover:underline max-w-full"
                 title={url}
               >
                 {url}
@@ -822,14 +838,14 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
           width: "260px",
           cellClassName: "whitespace-nowrap",
           render: (r) => (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 max-w-full min-w-0">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedDrawerPayment(r);
                 }}
-                className="inline-flex items-center justify-center p-1 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-600 transition-all"
+                className="inline-flex items-center justify-center p-1 rounded-lg text-blue-500 hover:bg-blue-50 hover:text-blue-600 transition-all shrink-0"
                 title="View Payment Details"
               >
                 <FileText className="h-4 w-4" />
@@ -841,12 +857,13 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
                     e.stopPropagation();
                     navigate(`/student/${r.studentId}?context=payments`);
                   }}
-                  className="inline-flex items-center font-medium text-skillit transition-colors hover:underline"
+                  className="inline-flex items-center font-medium text-skillit transition-colors hover:underline truncate text-left"
+                  title={r.customerName}
                 >
                   {r.customerName}
                 </button>
               ) : (
-                <span className="font-medium text-slate-700">{r.customerName}</span>
+                <span className="font-medium text-slate-700 truncate" title={r.customerName}>{r.customerName}</span>
               )}
             </div>
           ),
@@ -872,7 +889,7 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
           cellClassName: "whitespace-nowrap",
           render: (r) => (
             isBookedOrdersModule || isEnrolledModule || !canViewDetails ? (
-              <span className="font-medium text-slate-700 px-2 py-1">{r.customerName}</span>
+              <span className="font-medium text-slate-700 px-2 py-1 truncate block" title={r.customerName}>{r.customerName}</span>
             ) : (
               <button
                 type="button"
@@ -880,9 +897,10 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
                   e.stopPropagation();
                   navigate(`/student/${r.id}?context=${view}`);
                 }}
-                className="inline-flex items-center rounded-full px-2 py-1 font-medium text-skillit transition-colors hover:bg-blue-50"
+                className="inline-flex items-center rounded-full px-2 py-1 font-medium text-skillit transition-colors hover:bg-blue-50 max-w-full"
+                title={r.customerName}
               >
-                {r.customerName}
+                <span className="truncate">{r.customerName}</span>
               </button>
             )
           ),
@@ -912,13 +930,25 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
 
     if (!isStudentModule) {
       return [
-        { key: "customerName", label: "Customer Name", render: (r) => <span className={canViewDetails ? "font-medium text-skillit" : "font-medium text-slate-700"}>{r.customerName}</span> },
-        { key: "date", label: "Date" },
-        { key: "month", label: "Month" },
-        { key: "cycle", label: "Cycle" },
-        { key: "course", label: "Course" },
-        { key: "contactNumber", label: "Customer Contact", render: (r) => formatPhoneDisplay(r.contactNumber) },
-        { key: "sdeName", label: "SDE" },
+        {
+          key: "customerName",
+          label: "Customer Name",
+          width: "220px",
+          render: (r) => (
+            <span
+              className={canViewDetails ? "font-medium text-skillit truncate block" : "font-medium text-slate-700 truncate block"}
+              title={r.customerName}
+            >
+              {r.customerName}
+            </span>
+          )
+        },
+        { key: "date", label: "Date", width: "120px" },
+        { key: "month", label: "Month", width: "110px" },
+        { key: "cycle", label: "Cycle", width: "90px" },
+        { key: "course", label: "Course", width: "220px" },
+        { key: "contactNumber", label: "Customer Contact", width: "160px", render: (r) => formatPhoneDisplay(r.contactNumber) },
+        { key: "sdeName", label: "SDE", width: "160px" },
       ];
     }
 
@@ -926,11 +956,19 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
       {
         key: "customerName",
         label: "Student Name",
-        render: (r) => <span className={canViewDetails ? "font-medium text-skillit" : "font-medium text-slate-700"}>{r.customerName}</span>,
+        width: "220px",
+        render: (r) => (
+          <span
+            className={canViewDetails ? "font-medium text-skillit truncate block" : "font-medium text-slate-700 truncate block"}
+            title={r.customerName}
+          >
+            {r.customerName}
+          </span>
+        ),
       },
-      { key: "program", label: "Program" },
-      { key: "uniqueId", label: "Unique ID" },
-      { key: "saleValue", label: "Total Amount", render: (r) => money(r.saleValue) },
+      { key: "program", label: "Program", width: "220px" },
+      { key: "uniqueId", label: "Unique ID", width: "140px" },
+      { key: "saleValue", label: "Total Amount", width: "140px", render: (r) => money(r.saleValue) },
       {
         key: "paymentLinkAmount",
         label: (
@@ -940,15 +978,17 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
             generated
           </span>
         ),
+        width: "140px",
         render: (r) => money(r.paymentLinkAmount),
       },
-      { key: "createdAt", label: "Created At" },
-      { key: "createdBy", label: "Created By" },
-      { key: "reportedTo", label: "Reported To" },
-      { key: "department", label: "Department" },
+      { key: "createdAt", label: "Created At", width: "160px" },
+      { key: "createdBy", label: "Created By", width: "160px" },
+      { key: "reportedTo", label: "Reported To", width: "160px" },
+      { key: "department", label: "Department", width: "140px" },
       {
         key: "status",
         label: "Status",
+        width: "120px",
         render: (r) => <Badge tone={r.status === "Dropped" ? "red" : "green"}>{r.status === "Dropped" ? "Dropped" : "Active"}</Badge>,
       },
     ];
@@ -986,57 +1026,122 @@ export default function StudentListPage({ title, subtitle = "Skillit Academy | 8
         <>
           {/* Row 1: Hierarchy (if any), Universal Search, and Date filter */}
           <div className="flex flex-wrap items-center gap-3 mb-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
-            {visibleLevels.length > 0 && (
-              <>
-                {visibleLevels.map((level, idx) => {
-                  const getOptions = () => {
-                    const allUsers = hierarchyData.users || [];
-                    const filteredByDes = allUsers.filter((u) => u.designation === level);
+            {/* Chained Hierarchy Filters based on logged-in User Role */}
+            {(() => {
+              const isUserAdmin = isAdminRole(user.role);
+              const isUserSrManager = isSrManagerDesignation(user.designation || user.role);
+              const isUserManager = isManagerDesignation(user.designation || user.role);
 
-                    if (idx === 0) {
-                      if (isAdminRole(user.role)) {
-                        return filteredByDes;
-                      }
-                      return filteredByDes.filter((u) => u.reportingTo === user.id);
-                    }
-
-                    const parentLvl = visibleLevels[idx - 1];
-                    const parentSelection = selections[parentLvl];
-                    if (!parentSelection) return [];
-                    return filteredByDes.filter((u) => u.reportingTo === parentSelection);
-                  };
-
-                  const options = getOptions();
-                  const isDisabled = idx > 0 && !selections[visibleLevels[idx - 1]];
-
-                  return (
+              if (isUserAdmin) {
+                return (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-slate-500 mr-1">Reportees:</span>
                     <Select
-                      key={level}
-                      value={selections[level] || ""}
+                      value={selectedSrManager}
                       onChange={(e) => {
                         const val = e.target.value;
-                        setSelections((prev) => {
-                          const next = { ...prev, [level]: val };
-                          for (let i = idx + 1; i < visibleLevels.length; i++) {
-                            delete next[visibleLevels[i]];
-                          }
-                          return next;
-                        });
+                        setSelectedSrManager(val);
+                        setSelectedManager("");
+                        setSelectedSde("");
                       }}
-                      disabled={isDisabled}
                       className="!w-[150px] !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]"
                     >
-                      <option value="">Select {level}</option>
-                      {options.map((opt) => (
-                        <option key={opt.id} value={opt.id}>
-                          {opt.name}
+                      <option value="">Select Senior Manager</option>
+                      {(hierarchyData.seniorManagers || []).map((sm) => (
+                        <option key={sm.id} value={sm.id}>
+                          {sm.name}
                         </option>
                       ))}
                     </Select>
-                  );
-                })}
-              </>
-            )}
+
+                    <Select
+                      value={selectedManager}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedManager(val);
+                        setSelectedSde("");
+                      }}
+                      className="!w-[150px] !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]"
+                    >
+                      <option value="">Select Reporting Manager</option>
+                      {filteredManagersForAdmin.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </Select>
+
+                    <Select
+                      value={selectedSde}
+                      onChange={(e) => setSelectedSde(e.target.value)}
+                      className="!w-[150px] !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]"
+                    >
+                      <option value="">Select SD</option>
+                      {filteredSdesForAdmin.map((sde) => (
+                        <option key={sde.id} value={sde.id}>
+                          {sde.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                );
+              }
+
+              if (isUserSrManager) {
+                return (
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={selectedManager}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedManager(val);
+                        setSelectedSde("");
+                      }}
+                      className="!w-[150px] !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]"
+                    >
+                      <option value="">Select Reporting Manager</option>
+                      {(hierarchyData.managers || []).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </Select>
+
+                    <Select
+                      value={selectedSde}
+                      onChange={(e) => setSelectedSde(e.target.value)}
+                      className="!w-[150px] !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]"
+                    >
+                      <option value="">Select SD</option>
+                      {filteredSdesForSrManager.map((sde) => (
+                        <option key={sde.id} value={sde.id}>
+                          {sde.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                );
+              }
+
+              if (isUserManager) {
+                return (
+                  <Select
+                    value={selectedSde}
+                    onChange={(e) => setSelectedSde(e.target.value)}
+                    className="!w-[150px] !h-8 !px-2.5 !py-1.5 shrink-0 bg-white text-[11px]"
+                  >
+                    <option value="">Select SD</option>
+                    {(hierarchyData.sdes || []).map((sde) => (
+                      <option key={sde.id} value={sde.id}>
+                        {sde.name}
+                      </option>
+                    ))}
+                  </Select>
+                );
+              }
+
+              return null;
+            })()}
 
             {/* Universal Search Box */}
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 !h-8 shrink-0 w-[260px]">

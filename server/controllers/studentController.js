@@ -1159,9 +1159,13 @@ export async function getHierarchyFilters(req, res) {
     const levels = await getDynamicHierarchyLevels();
 
     // Preserve legacy fields for backward compatibility
-    const seniorManagers = usersRaw
-      .filter((u) => isSrManagerDesignation(u.designation || u.role))
-      .map((u) => ({ id: u._id.toString(), name: u.name }));
+    const seniorManagers = [];
+    const seniorManagersRaw = usersRaw.filter((u) => isSrManagerDesignation(u.designation || u.role));
+    for (const sm of seniorManagersRaw) {
+      const parentTeam = teams.find((t) => t.members.some((mId) => mId.toString() === sm._id.toString()));
+      const reportingTo = parentTeam ? parentTeam.manager.toString() : null;
+      seniorManagers.push({ id: sm._id.toString(), name: sm.name, reportingTo });
+    }
 
     const managers = [];
     const managersRaw = usersRaw.filter((u) => isManagerDesignation(u.designation || u.role));

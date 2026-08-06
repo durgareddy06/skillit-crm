@@ -3,7 +3,8 @@ export function normalizeDesignation(value = "") {
 }
 
 export function isSdeDesignation(value = "") {
-  return normalizeDesignation(value) === "sde";
+  const norm = normalizeDesignation(value);
+  return norm === "sde" || norm === "sd" || norm === "salesdeveloper";
 }
 
 export function isManagerDesignation(value = "") {
@@ -11,12 +12,33 @@ export function isManagerDesignation(value = "") {
 }
 
 export function isSrManagerDesignation(value = "") {
-  return normalizeDesignation(value) === "sr.manager" || normalizeDesignation(value) === "srmanager";
+  const norm = normalizeDesignation(value);
+  if (!norm) return false;
+  if (norm === "manager") return false;
+
+  const excluded = [
+    "sde", "sd", "salesdeveloper", "admin",
+    "misexecutive", "mis", "customersupportexecutive",
+    "customersupport", "support", "relationshipmanager", "tech"
+  ];
+  const isExcluded = excluded.some(ex => norm === ex || norm.includes(ex));
+  if (isExcluded) return false;
+
+  return (
+    norm.includes("srmanager") ||
+    norm.includes("sr.manager") ||
+    norm.includes("seniormanager") ||
+    norm === "agm" ||
+    norm.includes("vp") ||
+    norm.includes("vicepresident") ||
+    norm.includes("director") ||
+    norm.includes("ultraseniormanager") ||
+    norm.includes("ultrasenior")
+  );
 }
 
 export function isLeadershipDesignation(value = "") {
-  const designation = normalizeDesignation(value);
-  return designation === "manager" || designation === "sr.manager" || designation === "srmanager";
+  return isManagerDesignation(value) || isSrManagerDesignation(value);
 }
 
 export function isMisExecutiveDesignation(value = "") {

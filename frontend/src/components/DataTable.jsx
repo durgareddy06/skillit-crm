@@ -119,7 +119,12 @@ export default function DataTable({
                       className={`px-4 py-4 align-middle text-slate-700 ${col.cellClassName || ""}`}
                       style={col.width ? { width: col.width, minWidth: col.width } : undefined}
                     >
-                      <div>{col.render ? col.render(row) : row[col.key]}</div>
+                      <div
+                        className={col.render ? "" : "truncate"}
+                        title={col.render ? undefined : (row[col.key] != null ? String(row[col.key]) : undefined)}
+                      >
+                        {col.render ? col.render(row) : row[col.key]}
+                      </div>
                     </td>
                   ))}
                 </tr>

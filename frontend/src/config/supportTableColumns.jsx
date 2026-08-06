@@ -10,7 +10,7 @@ export function buildSupportTableColumns({ nameExtra, onNameClick }) {
       width: "220px",
       cellClassName: "whitespace-nowrap",
       render: (r) => (
-        <span className="inline-flex items-center gap-2">
+        <span className="inline-flex items-center gap-2 max-w-full min-w-0" title={r.customerName}>
           {onNameClick ? (
             <button
               type="button"
@@ -18,15 +18,15 @@ export function buildSupportTableColumns({ nameExtra, onNameClick }) {
                 e.stopPropagation();
                 onNameClick(r);
               }}
-              className="inline-flex items-center gap-2 rounded-full px-2 py-1 font-medium text-skillit transition-colors hover:bg-blue-50"
+              className="inline-flex items-center gap-2 rounded-full px-2 py-1 font-medium text-skillit transition-colors hover:bg-blue-50 max-w-full min-w-0 text-left"
             >
-              <span className="grid h-8 w-8 place-items-center rounded-full border border-blue-100 bg-white text-skillit shadow-sm transition-all duration-150 hover:bg-blue-50">
+              <span className="grid h-8 w-8 place-items-center rounded-full border border-blue-100 bg-white text-skillit shadow-sm transition-all duration-150 hover:bg-blue-50 shrink-0">
                 <MoreVertical className="h-4 w-4" />
               </span>
-              {r.customerName}
+              <span className="truncate">{r.customerName}</span>
             </button>
           ) : (
-            <span className="font-medium text-slate-700">{r.customerName}</span>
+            <span className="font-medium text-slate-700 truncate">{r.customerName}</span>
           )}
           {nameExtra ? <span className="shrink-0">{nameExtra(r)}</span> : null}
         </span>
